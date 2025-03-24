@@ -1,8 +1,8 @@
 #![cfg(test)]
 use soroban_sdk::{
-    testutils::Address,
+    testutils::Address as TestAddress,
     token::{StellarAssetClient, TokenClient},
-    BytesN, Env,
+    Address, BytesN, Env,
 };
 
 use utxo::tests::helpers::{generate_utxo_keypair, sign_hash};
@@ -17,7 +17,8 @@ fn test_deposit_and_withdraw_success() {
     let e = Env::default();
     e.mock_all_auths();
 
-    let (pool, asset_client, token_client): (
+    let (_admin, pool, asset_client, token_client): (
+        Address,
         PrivacyPoolContractClient,
         StellarAssetClient,
         TokenClient,
@@ -25,7 +26,7 @@ fn test_deposit_and_withdraw_success() {
 
     let amount: i128 = 100;
 
-    let user = <soroban_sdk::Address as Address>::generate(&e);
+    let user = <soroban_sdk::Address as TestAddress>::generate(&e);
 
     asset_client.mint(&user, &amount);
     assert_eq!(

@@ -16,8 +16,9 @@ no-utxo-events = []
 [dependencies]
 soroban-sdk = { workspace = true }
 utxo = { workspace = true , features = [] }
-
+provider-management = { workspace = true }
 
 [dev-dependencies]
 soroban-sdk = { workspace = true }
 utxo = { workspace = true, features = ["testutils"] }
+provider-management = { workspace = true }

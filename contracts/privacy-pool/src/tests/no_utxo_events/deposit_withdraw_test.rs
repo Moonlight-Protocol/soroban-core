@@ -1,22 +1,34 @@
 #![cfg(test)]
 use soroban_sdk::{
     symbol_short,
-    testutils::{Address, Events},
+    testutils::{Address as TestAddress, Events},
     BytesN, Env, IntoVal,
 };
 
 use utxo::tests::helpers::{generate_utxo_keypair, sign_hash};
 
-use crate::{contract::withdraw_payload, tests::helpers::create_contracts};
+use crate::{
+    contract::{withdraw_payload, PrivacyPoolContractClient},
+    tests::helpers::create_contracts,
+};
 
 #[cfg(not(feature = "no-utxo-events"))]
 #[test]
 fn test_deposit_and_withdraw_with_utxo_events_success() {
+    use soroban_sdk::{
+        token::{StellarAssetClient, TokenClient},
+        Address,
+    };
+
     let e = Env::default();
     e.mock_all_auths();
 
-    let (pool, asset_client, token_client) = create_contracts(&e);
-
+    let (_admin, pool, asset_client, token_client): (
+        Address,
+        PrivacyPoolContractClient,
+        StellarAssetClient,
+        TokenClient,
+    ) = create_contracts(&e);
     let amount: i128 = 100;
     let user = soroban_sdk::Address::generate(&e);
 
