@@ -1,5 +1,8 @@
 use soroban_sdk::{contracttype, crypto::Hash, Bytes, BytesN, Env, Vec};
 
+#[cfg(not(all(feature = "no-utxo-events", feature = "no-delegate-events")))]
+use soroban_sdk::symbol_short;
+
 use crate::emit_optional_event;
 
 #[derive(Clone)]
