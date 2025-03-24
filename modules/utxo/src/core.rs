@@ -1,4 +1,4 @@
-use soroban_sdk::{contracttype, crypto::Hash, symbol_short, Bytes, BytesN, Env, Vec};
+use soroban_sdk::{contracttype, crypto::Hash, Bytes, BytesN, Env, Vec};
 
 use crate::emit_optional_event;
 
