@@ -1,0 +1,23 @@
+[package]
+name = "privacy-pool"
+description = "Privacy Pool"
+version = "0.0.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib"]
+# doctest = false
+
+
+[features]
+no-utxo-events = []
+
+
+[dependencies]
+soroban-sdk = { workspace = true }
+utxo = { workspace = true , features = [] }
+
+
+[dev-dependencies]
+soroban-sdk = { workspace = true }
+utxo = { workspace = true, features = ["testutils"] }
