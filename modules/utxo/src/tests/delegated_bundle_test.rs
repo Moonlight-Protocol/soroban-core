@@ -1,8 +1,8 @@
 #![cfg(test)]
 
 use crate::{
+    core::{bundle_payload, Bundle},
     tests::helpers::{create_contract, generate_utxo_keypair, sign_hash},
-    utxo,
 };
 use soroban_sdk::{symbol_short, testutils::Events, vec, BytesN, Env, IntoVal};
 
@@ -27,13 +27,13 @@ fn test_single_delegated_transfer_success() {
     // Call the mint function via the contract
     contract.mint(&amount, &utxo1.clone());
 
-    let mut bundle = utxo::Bundle {
+    let mut bundle = Bundle {
         spend: vec![&e, utxo1.clone()],
         create: vec![&e, (utxo2.clone(), 80)],
         signatures: vec![&e],
     };
 
-    let hash = utxo::bundle_payload(&e, bundle.clone(), "DELEGATED_TRANSFER");
+    let hash = bundle_payload(&e, bundle.clone(), "DELEGATED_TRANSFER");
 
     let signature = sign_hash(&keypair1.secret_key, &hash);
 
@@ -123,13 +123,13 @@ fn test_single_delegated_transfer_only_spending_success() {
     contract.mint(&100_i128, &utxo1.clone());
     contract.mint(&50_i128, &utxo2.clone());
 
-    let mut bundle = utxo::Bundle {
+    let mut bundle = Bundle {
         spend: vec![&e, utxo1.clone(), utxo2.clone()],
         create: vec![&e],
         signatures: vec![&e],
     };
 
-    let hash = utxo::bundle_payload(&e, bundle.clone(), "DELEGATED_TRANSFER");
+    let hash = bundle_payload(&e, bundle.clone(), "DELEGATED_TRANSFER");
 
     let signature_1 = sign_hash(&keypair1.secret_key, &hash);
     let signature_2 = sign_hash(&keypair2.secret_key, &hash);
@@ -227,13 +227,13 @@ fn test_split_delegated_transfer_success() {
     // Call the mint function via the contract
     contract.mint(&amount_create, &utxo1.clone());
 
-    let mut bundle = utxo::Bundle {
+    let mut bundle = Bundle {
         spend: vec![&e, utxo1.clone()],
         create: vec![&e, (utxo2.clone(), 60i128), (utxo3.clone(), 30i128)],
         signatures: vec![&e],
     };
 
-    let hash = utxo::bundle_payload(&e, bundle.clone(), "DELEGATED_TRANSFER");
+    let hash = bundle_payload(&e, bundle.clone(), "DELEGATED_TRANSFER");
 
     let signature = sign_hash(&keypair1.secret_key, &hash);
 
@@ -344,13 +344,13 @@ fn test_converging_delegated_transfer_success() {
     contract.mint(&amount_create, &utxo1.clone());
     contract.mint(&amount_create, &utxo2.clone());
 
-    let mut bundle = utxo::Bundle {
+    let mut bundle = Bundle {
         spend: vec![&e, utxo1.clone(), utxo2.clone()],
         create: vec![&e, (utxo3.clone(), 185)],
         signatures: vec![&e],
     };
 
-    let hash = utxo::bundle_payload(&e, bundle.clone(), "DELEGATED_TRANSFER");
+    let hash = bundle_payload(&e, bundle.clone(), "DELEGATED_TRANSFER");
 
     let signature1 = sign_hash(&keypair1.secret_key, &hash);
     let signature2 = sign_hash(&keypair2.secret_key, &hash);
@@ -462,7 +462,7 @@ fn test_mixed_balance_delegated_transfer_successfull() {
     contract.mint(&200, &utxo1.clone());
     contract.mint(&300, &utxo2.clone());
 
-    let mut bundle = utxo::Bundle {
+    let mut bundle = Bundle {
         spend: vec![&e, utxo1.clone(), utxo2.clone()],
         create: vec![
             &e,
@@ -473,7 +473,7 @@ fn test_mixed_balance_delegated_transfer_successfull() {
         signatures: vec![&e],
     };
 
-    let hash = utxo::bundle_payload(&e, bundle.clone(), "DELEGATED_TRANSFER");
+    let hash = bundle_payload(&e, bundle.clone(), "DELEGATED_TRANSFER");
 
     let signature1 = sign_hash(&keypair1.secret_key, &hash);
     let signature2 = sign_hash(&keypair2.secret_key, &hash);

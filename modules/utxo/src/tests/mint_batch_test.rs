@@ -1,6 +1,6 @@
 #![cfg(test)]
 
-use crate::{tests::helpers::create_contract, utxo::MintRequest};
+use crate::{core::MintRequest, tests::helpers::create_contract};
 use soroban_sdk::{symbol_short, testutils::Events, vec, BytesN, Env, IntoVal};
 
 #[test]

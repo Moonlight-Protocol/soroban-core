@@ -1,5 +1,5 @@
 [package]
-name = "utxo-handler"
+name = "utxo"
 description = "UTXO Module"
 version = "1.0.0"
 edition = "2021"
@@ -22,7 +22,7 @@ rand_core = { version = "0.6",optional = true }
 
 [dev-dependencies]
 soroban-sdk = { workspace = true, features = ["testutils"] }
-utxo-handler = { workspace = true, features = ["testutils"] }
+utxo = { workspace = true, features = ["testutils"] }
 p256 = { version = "0.13.2", default-features = false, features = ["ecdsa", "arithmetic"]}
 elliptic-curve = { version = "0.13.5", default-features = false}
 rand_core = { version = "0.6"}

@@ -1,8 +1,8 @@
 #![cfg(test)]
 
 use crate::{
+    core::{bundle_payload, Bundle},
     tests::helpers::{create_contract, generate_utxo_keypair, sign_hash},
-    utxo,
 };
 use soroban_sdk::{symbol_short, testutils::Events, vec, BytesN, Env, IntoVal};
 
@@ -37,13 +37,13 @@ fn test_multiple_bundle_transactions_successfull() {
     let utxo_2 = keypair_2.public_key.clone();
     let utxo_3 = keypair_3.public_key.clone();
 
-    let mut bundle = utxo::Bundle {
+    let mut bundle = Bundle {
         spend: vec![&e, utxo_1.clone()],
         create: vec![&e, (utxo_2.clone(), 350), (utxo_3.clone(), 650)],
         signatures: vec![&e],
     };
 
-    let hash_1 = utxo::bundle_payload(&e, bundle.clone(), "TRANSFER");
+    let hash_1 = bundle_payload(&e, bundle.clone(), "TRANSFER");
 
     let signature_1 = sign_hash(&keypair_1.secret_key, &hash_1);
     let signature_bytes_1 = BytesN::<64>::from_array(&e, &signature_1);
@@ -128,13 +128,13 @@ fn test_multiple_bundle_transactions_successfull() {
     let utxo_7 = keypair_7.public_key.clone();
     let utxo_8 = keypair_8.public_key.clone();
 
-    let mut bundle_2 = utxo::Bundle {
+    let mut bundle_2 = Bundle {
         spend: vec![&e, utxo_2.clone()],
         create: vec![&e, (utxo_4.clone(), 200), (utxo_5.clone(), 150)],
         signatures: vec![&e],
     };
 
-    let mut bundle_3 = utxo::Bundle {
+    let mut bundle_3 = Bundle {
         spend: vec![&e, utxo_3.clone()],
         create: vec![
             &e,
@@ -145,8 +145,8 @@ fn test_multiple_bundle_transactions_successfull() {
         signatures: vec![&e],
     };
 
-    let hash_2 = utxo::bundle_payload(&e, bundle_2.clone(), "TRANSFER");
-    let hash_3 = utxo::bundle_payload(&e, bundle_3.clone(), "TRANSFER");
+    let hash_2 = bundle_payload(&e, bundle_2.clone(), "TRANSFER");
+    let hash_3 = bundle_payload(&e, bundle_3.clone(), "TRANSFER");
 
     let signature_2 = sign_hash(&keypair_2.secret_key, &hash_2);
     let signature_bytes_2 = BytesN::<64>::from_array(&e, &signature_2);
@@ -306,27 +306,27 @@ fn test_multiple_bundle_transactions_successfull() {
     let utxo_12 = keypair_12.public_key.clone();
     let utxo_13 = keypair_13.public_key.clone();
 
-    let mut bundle_4 = utxo::Bundle {
+    let mut bundle_4 = Bundle {
         spend: vec![&e, utxo_4.clone()],
         create: vec![&e, (utxo_9.clone(), 100), (utxo_10.clone(), 100)],
         signatures: vec![&e],
     };
 
-    let mut bundle_5 = utxo::Bundle {
+    let mut bundle_5 = Bundle {
         spend: vec![&e, utxo_5.clone(), utxo_6.clone()],
         create: vec![&e, (utxo_11.clone(), 450)],
         signatures: vec![&e],
     };
 
-    let mut bundle_6 = utxo::Bundle {
+    let mut bundle_6 = Bundle {
         spend: vec![&e, utxo_7.clone(), utxo_8.clone()],
         create: vec![&e, (utxo_12.clone(), 200), (utxo_13.clone(), 150)],
         signatures: vec![&e],
     };
 
-    let hash_4 = utxo::bundle_payload(&e, bundle_4.clone(), "TRANSFER");
-    let hash_5 = utxo::bundle_payload(&e, bundle_5.clone(), "TRANSFER");
-    let hash_6 = utxo::bundle_payload(&e, bundle_6.clone(), "TRANSFER");
+    let hash_4 = bundle_payload(&e, bundle_4.clone(), "TRANSFER");
+    let hash_5 = bundle_payload(&e, bundle_5.clone(), "TRANSFER");
+    let hash_6 = bundle_payload(&e, bundle_6.clone(), "TRANSFER");
 
     let signature_4 = sign_hash(&keypair_4.secret_key, &hash_4);
     let signature_bytes_4 = BytesN::<64>::from_array(&e, &signature_4);

@@ -1,8 +1,8 @@
 #![cfg(test)]
 
 use crate::{
+    core::{burn_payload, BurnRequest},
     tests::helpers::{create_contract, generate_utxo_keypair, sign_hash},
-    utxo::{self, BurnRequest},
 };
 use soroban_sdk::{symbol_short, testutils::Events, vec, BytesN, Env, IntoVal};
 
@@ -17,7 +17,7 @@ fn test_burn_batch_success() {
 
     contract.mint(&amount, &utxo);
 
-    let hash = utxo::burn_payload(&e, &utxo, amount);
+    let hash = burn_payload(&e, &utxo, amount);
     let signature = sign_hash(&keypair.secret_key, &hash);
     let signature_bytes = BytesN::<64>::from_array(&e, &signature);
 
