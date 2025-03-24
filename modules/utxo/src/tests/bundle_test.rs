@@ -1,8 +1,8 @@
 #![cfg(test)]
 
 use crate::{
+    core::{bundle_payload, Bundle},
     tests::helpers::{create_contract, generate_utxo_keypair, sign_hash},
-    utxo,
 };
 use soroban_sdk::{symbol_short, testutils::Events, vec, BytesN, Env, IntoVal};
 
@@ -26,13 +26,13 @@ fn test_single_transfer_success() {
     // Call the mint function via the contract
     contract.mint(&amount, &utxo1.clone());
 
-    let mut bundle = utxo::Bundle {
+    let mut bundle = Bundle {
         spend: vec![&e, utxo1.clone()],
         create: vec![&e, (utxo2.clone(), amount)],
         signatures: vec![&e],
     };
 
-    let hash = utxo::bundle_payload(&e, bundle.clone(), "TRANSFER");
+    let hash = bundle_payload(&e, bundle.clone(), "TRANSFER");
 
     let signature = sign_hash(&keypair1.secret_key, &hash);
 
@@ -104,13 +104,13 @@ fn test_split_transfer_success() {
     // Call the mint function via the contract
     contract.mint(&amount_create, &utxo1.clone());
 
-    let mut bundle = utxo::Bundle {
+    let mut bundle = Bundle {
         spend: vec![&e, utxo1.clone()],
         create: vec![&e, (utxo2.clone(), 60i128), (utxo3.clone(), 40i128)],
         signatures: vec![&e],
     };
 
-    let hash = utxo::bundle_payload(&e, bundle.clone(), "TRANSFER");
+    let hash = bundle_payload(&e, bundle.clone(), "TRANSFER");
 
     let signature = sign_hash(&keypair1.secret_key, &hash);
 
@@ -199,13 +199,13 @@ fn test_converging_transfer_success() {
     contract.mint(&amount_create, &utxo1.clone());
     contract.mint(&amount_create, &utxo2.clone());
 
-    let mut bundle = utxo::Bundle {
+    let mut bundle = Bundle {
         spend: vec![&e, utxo1.clone(), utxo2.clone()],
         create: vec![&e, (utxo3.clone(), 200)],
         signatures: vec![&e],
     };
 
-    let hash = utxo::bundle_payload(&e, bundle.clone(), "TRANSFER");
+    let hash = bundle_payload(&e, bundle.clone(), "TRANSFER");
 
     let signature1 = sign_hash(&keypair1.secret_key, &hash);
     let signature2 = sign_hash(&keypair2.secret_key, &hash);
@@ -296,7 +296,7 @@ fn test_mixed_balance_transfer_successfull() {
     contract.mint(&200, &utxo1.clone());
     contract.mint(&300, &utxo2.clone());
 
-    let mut bundle = utxo::Bundle {
+    let mut bundle = Bundle {
         spend: vec![&e, utxo1.clone(), utxo2.clone()],
         create: vec![
             &e,
@@ -307,7 +307,7 @@ fn test_mixed_balance_transfer_successfull() {
         signatures: vec![&e],
     };
 
-    let hash = utxo::bundle_payload(&e, bundle.clone(), "TRANSFER");
+    let hash = bundle_payload(&e, bundle.clone(), "TRANSFER");
 
     let signature1 = sign_hash(&keypair1.secret_key, &hash);
     let signature2 = sign_hash(&keypair2.secret_key, &hash);

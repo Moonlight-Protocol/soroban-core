@@ -4,7 +4,10 @@ use elliptic_curve::scalar::IsHigh;
 use p256::ecdsa::{signature::hazmat::PrehashSigner, Signature, SigningKey, VerifyingKey};
 use rand_core::OsRng;
 
-use crate::utxo::{self, Bundle, BurnRequest, MintRequest};
+use crate::core::{
+    burn, burn_batch, delegated_transfer, mint, mint_batch, transfer, transfer_burn_leftover,
+    utxo_balance, Bundle, BurnRequest, MintRequest,
+};
 
 pub trait UTXOHandler {
     fn mint(e: Env, amount: i128, utxo: BytesN<65>);
@@ -70,35 +73,35 @@ impl TestContract {
 #[contractimpl]
 impl UTXOHandler for TestContract {
     fn mint(e: Env, amount: i128, utxo: BytesN<65>) {
-        utxo::mint(&e, amount, utxo);
+        mint(&e, amount, utxo);
     }
 
-    fn mint_batch(e: Env, requests: Vec<utxo::MintRequest>) {
-        utxo::mint_batch(&e, requests);
+    fn mint_batch(e: Env, requests: Vec<MintRequest>) {
+        mint_batch(&e, requests);
     }
 
     fn utxo_balance(e: Env, utxo: BytesN<65>) -> i128 {
-        utxo::utxo_balance(e, utxo)
+        utxo_balance(e, utxo)
     }
 
     fn burn(e: Env, utxo: BytesN<65>, signature: BytesN<64>) {
-        utxo::burn(&e, utxo, signature);
+        burn(&e, utxo, signature);
     }
 
-    fn burn_batch(e: Env, requests: Vec<utxo::BurnRequest>) {
-        utxo::burn_batch(&e, requests);
+    fn burn_batch(e: Env, requests: Vec<BurnRequest>) {
+        burn_batch(&e, requests);
     }
 
-    fn transfer(e: Env, bundles: Vec<utxo::Bundle>) {
-        utxo::transfer(&e, bundles);
+    fn transfer(e: Env, bundles: Vec<Bundle>) {
+        transfer(&e, bundles);
     }
 
-    fn delegated_transfer(e: Env, bundles: Vec<utxo::Bundle>, delegate_utxo: BytesN<65>) {
-        utxo::delegated_transfer(&e, bundles, delegate_utxo);
+    fn delegated_transfer(e: Env, bundles: Vec<Bundle>, delegate_utxo: BytesN<65>) {
+        delegated_transfer(&e, bundles, delegate_utxo);
     }
 
-    fn transfer_custom_leftover(e: Env, bundles: Vec<utxo::Bundle>) -> i128 {
-        utxo::transfer_burn_leftover(&e, bundles, "CUSTOM")
+    fn transfer_custom_leftover(e: Env, bundles: Vec<Bundle>) -> i128 {
+        transfer_burn_leftover(&e, bundles, "CUSTOM")
     }
 }
 
