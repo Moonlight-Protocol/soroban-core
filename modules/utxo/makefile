@@ -1,7 +1,4 @@
 
-build:
-	stellar contract build
-
 # Run only the macro test with UTXO events disabled
 test-no-utxo-events:
 	cargo test test_mint_event_controlled_by_macro --features no-utxo-events
