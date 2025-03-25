@@ -1,4 +1,12 @@
-use crate::storage::{is_contract_initialized, read_admin, read_asset, write_admin, write_asset};
+use crate::storage::{
+    is_contract_initialized, read_admin, read_asset, read_provider_balance, read_supply,
+    write_admin_unchecked, write_asset_unchecked,
+};
+use crate::treasury::{
+    decrease_provider_balance, decrease_supply, increase_provider_balance, increase_supply,
+};
+
+use provider_management::core::is_provider;
 use provider_management::core::{
     deregister_provider as _deregister_provider, is_provider as _is_provider,
     register_provider as _register_provider, ProviderManagementTrait,
@@ -8,14 +16,15 @@ use soroban_sdk::token::TokenClient;
 use soroban_sdk::{contract, contractimpl, vec, Address, BytesN, Env, Vec};
 use utxo::core::{
     burn as _burn, burn_payload, delegated_transfer as _delegated_transfer, mint as _mint,
-    transfer as _transfer, utxo_balance, Bundle,
+    transfer as _transfer, transfer_burn_leftover, utxo_balance, Bundle,
 };
 
-#[contract]
-pub struct PrivacyPoolContract;
-
-pub trait PrivacyPoolTrait {
+pub trait PrivacyPoolCoreTrait {
     fn __constructor(e: Env, admin: Address, asset: Address);
+
+    fn admin(e: Env) -> Address;
+
+    fn supply(e: Env) -> i128;
 
     fn deposit(e: Env, from: Address, amount: i128, utxo: BytesN<65>);
 
@@ -27,13 +36,27 @@ pub trait PrivacyPoolTrait {
 
     fn transfer(e: Env, bundles: Vec<Bundle>);
 
-    fn delegated_transfer(e: Env, bundles: Vec<Bundle>, delegate_utxo: BytesN<65>);
+    fn delegated_transfer_utxo(
+        e: Env,
+        bundles: Vec<Bundle>,
+        provider: Address,
+        delegate_utxo: BytesN<65>,
+    );
+
+    fn delegated_transfer_bal(e: Env, bundles: Vec<Bundle>, provider: Address);
+
+    fn provider_balance(e: Env, provider: Address) -> i128;
+
+    fn provider_withdraw(e: Env, provider: Address, amount: i128);
 
     fn build_withdraw_payload(e: Env, utxo: BytesN<65>, amount: i128) -> BytesN<32>;
 }
 
+#[contract]
+pub struct PrivacyPoolContract;
+
 #[contractimpl]
-impl PrivacyPoolTrait for PrivacyPoolContract {
+impl PrivacyPoolCoreTrait for PrivacyPoolContract {
     fn __constructor(e: Env, admin: Address, asset: Address) {
         assert!(
             !is_contract_initialized(&e),
@@ -41,8 +64,16 @@ impl PrivacyPoolTrait for PrivacyPoolContract {
         );
 
         admin.require_auth();
-        write_admin(&e, admin);
-        write_asset(&e, asset);
+        write_admin_unchecked(&e, admin);
+        write_asset_unchecked(&e, asset);
+    }
+
+    fn admin(e: Env) -> Address {
+        read_admin(&e)
+    }
+
+    fn supply(e: Env) -> i128 {
+        read_supply(&e)
     }
 
     fn deposit(e: Env, from: Address, amount: i128, utxo: BytesN<65>) {
@@ -56,6 +87,7 @@ impl PrivacyPoolTrait for PrivacyPoolContract {
         asset_client.transfer(&from, &e.current_contract_address(), &amount);
 
         _mint(&e, amount, utxo);
+        increase_supply(&e, amount);
     }
 
     fn withdraw(e: Env, to: Address, amount: i128, utxo: BytesN<65>, signature: BytesN<64>) {
@@ -68,6 +100,7 @@ impl PrivacyPoolTrait for PrivacyPoolContract {
         assert!(balance == amount, "Incorrect UTXO balance!");
 
         _burn(&e, utxo, signature);
+        decrease_supply(&e, amount);
 
         let asset_client = TokenClient::new(&e, &asset);
 
@@ -96,10 +129,57 @@ impl PrivacyPoolTrait for PrivacyPoolContract {
         _transfer(&e, bundles);
     }
 
-    fn delegated_transfer(e: Env, bundles: Vec<Bundle>, delegate_utxo: BytesN<65>) {
+    fn delegated_transfer_utxo(
+        e: Env,
+        bundles: Vec<Bundle>,
+        provider: Address,
+        delegate_utxo: BytesN<65>,
+    ) {
         assert!(is_contract_initialized(&e), "Contract not initialized!");
 
+        assert!(
+            is_provider(&e, provider.clone()),
+            "Provider not registered!"
+        );
+
+        provider.require_auth();
+
         _delegated_transfer(&e, bundles, delegate_utxo);
+    }
+
+    fn delegated_transfer_bal(e: Env, bundles: Vec<Bundle>, provider: Address) {
+        assert!(is_contract_initialized(&e), "Contract not initialized!");
+
+        assert!(
+            is_provider(&e, provider.clone()),
+            "Provider not registered!"
+        );
+
+        provider.require_auth();
+
+        let change = transfer_burn_leftover(&e, bundles, "DELEGATED_TRANSFER");
+
+        increase_provider_balance(&e, provider, change);
+    }
+
+    fn provider_balance(e: Env, provider: Address) -> i128 {
+        read_provider_balance(&e, provider)
+    }
+
+    fn provider_withdraw(e: Env, provider: Address, amount: i128) {
+        is_provider(&e, provider.clone());
+        provider.require_auth();
+
+        let balance = read_provider_balance(&e, provider.clone());
+        assert!(balance >= amount, "Insufficient balance!");
+
+        decrease_supply(&e, amount);
+        decrease_provider_balance(&e, provider.clone(), amount);
+
+        let asset = read_asset(&e);
+        let asset_client = TokenClient::new(&e, &asset);
+
+        asset_client.transfer(&e.current_contract_address(), &provider, &amount);
     }
 
     fn build_withdraw_payload(e: Env, utxo: BytesN<65>, amount: i128) -> BytesN<32> {
@@ -130,6 +210,6 @@ pub fn withdraw_payload(e: &Env, utxo: BytesN<65>, amount: i128) -> Hash<32> {
     burn_payload(&e, &utxo, amount)
 }
 
-fn require_admin(e: &Env) {
+pub fn require_admin(e: &Env) {
     read_admin(e).require_auth();
 }
