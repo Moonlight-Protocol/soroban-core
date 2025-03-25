@@ -13,11 +13,11 @@ use utxo::{
 use crate::{contract::PrivacyPoolContractClient, tests::helpers::create_contracts};
 
 #[test]
-fn test_delegated_utxo_success() {
+fn test_delegated_bal_success() {
     let e = Env::default();
     e.mock_all_auths();
 
-    let (_admin, pool, asset_client, _token_client): (
+    let (_admin, pool, asset_client, token_client): (
         Address,
         PrivacyPoolContractClient,
         StellarAssetClient,
@@ -60,17 +60,11 @@ fn test_delegated_utxo_success() {
 
     bundle_a.signatures.insert(0, signature_bytes_a.clone());
 
-    let utxo_keypair_provider_a = generate_utxo_keypair(&e);
+    pool.delegated_transfer_bal(&vec![&e, bundle_a.clone()], &provider_a);
 
-    pool.delegated_transfer_utxo(
-        &vec![&e, bundle_a.clone()],
-        &provider_a,
-        &utxo_keypair_provider_a.public_key.clone(),
-    );
-
-    let provider_a_utxo_balance = pool.balance(&utxo_keypair_provider_a.public_key.clone());
+    let provider_a_balance = pool.provider_balance(&provider_a);
     assert_eq!(
-        provider_a_utxo_balance, 750,
+        provider_a_balance, 750,
         "Expected balance to be equal to change amount"
     );
 
@@ -107,17 +101,11 @@ fn test_delegated_utxo_success() {
 
     bundle_b.signatures.insert(0, signature_bytes_b.clone());
 
-    let utxo_keypair_provider_b = generate_utxo_keypair(&e);
+    pool.delegated_transfer_bal(&vec![&e, bundle_b.clone()], &provider_b);
 
-    pool.delegated_transfer_utxo(
-        &vec![&e, bundle_b.clone()],
-        &provider_b,
-        &utxo_keypair_provider_b.public_key.clone(),
-    );
-
-    let provider_b_utxo_balance = pool.balance(&utxo_keypair_provider_b.public_key.clone());
+    let provider_b_balance = pool.provider_balance(&provider_b);
     assert_eq!(
-        provider_b_utxo_balance, 150,
+        provider_b_balance, 150,
         "Expected balance to be equal to change amount"
     );
 
@@ -134,10 +122,38 @@ fn test_delegated_utxo_success() {
         utxo_c_balance_after_second_transfer, 100,
         "Expected balance to be equal to spent amount"
     );
+
+    assert_eq!(
+        token_client.balance(&provider_a),
+        0,
+        "Expected provider A balance to be 0 before withdrawing"
+    );
+
+    assert_eq!(
+        token_client.balance(&provider_b),
+        0,
+        "Expected provider B balance to be 0 before withdrawing"
+    );
+
+    pool.provider_withdraw(&provider_a, &750);
+
+    assert_eq!(
+        token_client.balance(&provider_a),
+        750,
+        "Expected provider A balance to be 750 after withdrawing"
+    );
+
+    pool.provider_withdraw(&provider_b, &150);
+
+    assert_eq!(
+        token_client.balance(&provider_b),
+        150,
+        "Expected provider B balance to be 150 after withdrawing"
+    );
 }
 
 #[test]
-fn test_delegated_utxo_trasnfer_without_create_success() {
+fn test_delegated_transfer_bal_without_create_success() {
     let e = Env::default();
     e.mock_all_auths();
 
@@ -180,17 +196,11 @@ fn test_delegated_utxo_trasnfer_without_create_success() {
 
     bundle_a.signatures.insert(0, signature_bytes_a.clone());
 
-    let utxo_keypair_provider_a = generate_utxo_keypair(&e);
+    pool.delegated_transfer_bal(&vec![&e, bundle_a.clone()], &provider_a);
 
-    pool.delegated_transfer_utxo(
-        &vec![&e, bundle_a.clone()],
-        &provider_a,
-        &utxo_keypair_provider_a.public_key.clone(),
-    );
-
-    let provider_a_utxo_balance = pool.balance(&utxo_keypair_provider_a.public_key.clone());
+    let provider_a_balance = pool.provider_balance(&provider_a);
     assert_eq!(
-        provider_a_utxo_balance, 1000,
+        provider_a_balance, 1000,
         "Expected balance to be equal to change amount"
     );
 
@@ -203,7 +213,66 @@ fn test_delegated_utxo_trasnfer_without_create_success() {
 
 #[test]
 #[should_panic]
-fn test_delegated_utxo_not_provider_failure() {
+fn test_delegated_bal_withdraw_missing_auth_failure() {
+    let e = Env::default();
+    e.mock_all_auths();
+
+    let (_admin, pool, asset_client, _token_client): (
+        Address,
+        PrivacyPoolContractClient,
+        StellarAssetClient,
+        TokenClient,
+    ) = create_contracts(&e);
+
+    let provider = <soroban_sdk::Address as TestAddress>::generate(&e);
+
+    pool.register_provider(&provider);
+
+    let amount: i128 = 1000;
+    let user = <soroban_sdk::Address as TestAddress>::generate(&e);
+
+    asset_client.mint(&user, &amount);
+
+    let utxo_keypair_a = generate_utxo_keypair(&e);
+
+    pool.deposit(&user, &amount, &utxo_keypair_a.public_key);
+
+    // ============================================
+    // Keypair A(1000) sends 250 to Keypair B
+    // Provider A gets 750
+    // ============================================
+
+    let utxo_keypair_b = generate_utxo_keypair(&e);
+
+    let mut bundle_a = Bundle {
+        spend: vec![&e, utxo_keypair_a.public_key.clone()],
+        create: vec![&e, (utxo_keypair_b.public_key.clone(), 250)],
+        signatures: vec![&e],
+    };
+
+    let hash_a = bundle_payload(&e, bundle_a.clone(), "DELEGATED_TRANSFER");
+
+    let signature_a: [u8; 64] = sign_hash(&utxo_keypair_a.secret_key, &hash_a);
+
+    let signature_bytes_a = BytesN::<64>::from_array(&e, &signature_a);
+
+    bundle_a.signatures.insert(0, signature_bytes_a.clone());
+
+    pool.delegated_transfer_bal(&vec![&e, bundle_a.clone()], &provider);
+
+    let provider_a_balance = pool.provider_balance(&provider);
+    assert_eq!(
+        provider_a_balance, 750,
+        "Expected balance to be equal to change amount"
+    );
+
+    e.set_auths(&[]); // Clear all auths
+    pool.provider_withdraw(&provider, &750);
+}
+
+#[test]
+#[should_panic]
+fn test_delegated_bal_not_provider_failure() {
     let e = Env::default();
     e.mock_all_auths();
 
@@ -246,18 +315,12 @@ fn test_delegated_utxo_not_provider_failure() {
 
     bundle_a.signatures.insert(0, signature_bytes_a.clone());
 
-    let utxo_keypair_provider = generate_utxo_keypair(&e);
-
-    pool.delegated_transfer_utxo(
-        &vec![&e, bundle_a.clone()],
-        &fake_provider,
-        &utxo_keypair_provider.public_key.clone(),
-    );
+    pool.delegated_transfer_bal(&vec![&e, bundle_a.clone()], &fake_provider);
 }
 
 #[test]
 #[should_panic]
-fn test_delegated_utxo_provider_auth_missing_failure() {
+fn test_delegated_bal_provider_auth_missing_failure() {
     let e = Env::default();
     e.mock_all_auths();
 
@@ -300,13 +363,7 @@ fn test_delegated_utxo_provider_auth_missing_failure() {
 
     bundle_a.signatures.insert(0, signature_bytes_a.clone());
 
-    let utxo_keypair_provider = generate_utxo_keypair(&e);
-
     e.set_auths(&[]); // Clear all auths
 
-    pool.delegated_transfer_utxo(
-        &vec![&e, bundle_a.clone()],
-        &provider,
-        &utxo_keypair_provider.public_key.clone(),
-    );
+    pool.delegated_transfer_bal(&vec![&e, bundle_a.clone()], &provider);
 }
