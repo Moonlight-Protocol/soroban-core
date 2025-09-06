@@ -1,4 +1,4 @@
-use soroban_sdk::{contract, contractimpl, crypto::Hash, BytesN, Env, Vec};
+use soroban_sdk::{contract, contractimpl, contracttrait, crypto::Hash, BytesN, Env, Vec};
 
 use elliptic_curve::scalar::IsHigh;
 use p256::ecdsa::{signature::hazmat::PrehashSigner, Signature, SigningKey, VerifyingKey};
@@ -8,7 +8,7 @@ use crate::core::{
     burn, burn_batch, delegated_transfer, mint, mint_batch, transfer, transfer_burn_leftover,
     utxo_balance, Bundle, BurnRequest, MintRequest,
 };
-
+#[contracttrait]
 pub trait UTXOHandler {
     fn mint(e: Env, amount: i128, utxo: BytesN<65>);
     fn mint_batch(e: Env, requests: Vec<MintRequest>);

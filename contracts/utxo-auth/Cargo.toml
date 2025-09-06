@@ -1,0 +1,20 @@
+[package]
+name = "utxo-auth"
+description = "UTXO Authentication"
+version = "0.0.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib"]
+doctest = false
+
+
+
+
+[dependencies]
+soroban-sdk = { git = "https://github.com/AhaLabs/rs-soroban-sdk", rev = "5a99659f1483c926ff87ea45f8823b8c00dc4cbd" }
+admin-sep = { git = "https://github.com/AhaLabs/admin-sep", rev = "bf195f4d67cc96587974212f998680ccf9a61cd7" }
+
+[dev-dependencies]
+soroban-sdk = { git = "https://github.com/AhaLabs/rs-soroban-sdk", rev = "5a99659f1483c926ff87ea45f8823b8c00dc4cbd", features = ["testutils"] }
+utxo = { workspace = true, features = ["testutils"] }

@@ -13,15 +13,23 @@ no-delegate-events = [] # disable delegate events for cost optimization
 [lib]
 crate-type = ["rlib"]
 
+
+
+
 [dependencies]
-soroban-sdk = { workspace = true }
+soroban-sdk = { git = "https://github.com/AhaLabs/rs-soroban-sdk", rev = "5a99659f1483c926ff87ea45f8823b8c00dc4cbd" }
+
+
+# soroban-sdk = { workspace = true }
 p256 = { version = "0.13.2", default-features = false, features = ["ecdsa", "arithmetic"],optional = true }
 elliptic-curve = { version = "0.13.5", default-features = false, optional = true }
 rand_core = { version = "0.6",optional = true }
 
 
 [dev-dependencies]
-soroban-sdk = { workspace = true, features = ["testutils"] }
+soroban-sdk = { git = "https://github.com/AhaLabs/rs-soroban-sdk", rev = "5a99659f1483c926ff87ea45f8823b8c00dc4cbd", features = ["testutils"] }
+
+# soroban-sdk = { workspace = true, features = ["testutils"] }
 utxo = { workspace = true, features = ["testutils"] }
 p256 = { version = "0.13.2", default-features = false, features = ["ecdsa", "arithmetic"]}
 elliptic-curve = { version = "0.13.5", default-features = false}

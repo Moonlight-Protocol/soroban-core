@@ -1,31 +1,49 @@
 [workspace]
-resolver = "2"
 members = [
   "modules/utxo",
   "modules/provider-management",
-  "contracts/privacy-pool",
+  "contracts/*",
 ]
+resolver = "2"
+
+[workspace.package]
+authors = ["Moonlight"]
+edition = "2021"
+license = "Apache-2.0"
+repository = "https://github.com/Moonlight-Protocol/soroban-core"
+version = "0.0.1"
+
+[workspace.dependencies.soroban-sdk]
+version = "22.0.8"
+
+[workspace.dependencies.soroban-token-sdk]
+version = "22.0.8"
+
+
+
+
+[workspace.dependencies.stellar-default-impl-macro]
+git = "https://github.com/OpenZeppelin/stellar-contracts"
+tag = "v0.3.0"
 
 [workspace.dependencies]
-soroban-sdk = "22.0.3"
-soroban-token-sdk = "22.0.3"
 utxo = { path = "modules/utxo" }
 provider-management = { path = "modules/provider-management" }
 
 
 [profile.release]
 opt-level = "z"
-overflow-checks = true
-debug = 0
-strip = "symbols"
-debug-assertions = false
-panic = "abort"
-codegen-units = 1
+debug = false
 lto = true
+debug-assertions = false
+codegen-units = 1
+panic = "abort"
+overflow-checks = true
+strip = true
 
 [profile.release-with-logs]
-inherits = "release"
 debug-assertions = true
+inherits = "release"
 
 [profile.test]
 overflow-checks = true
