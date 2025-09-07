@@ -2,13 +2,14 @@
 use core::panic;
 
 use soroban_sdk::{
-    contract, contracterror, contractimpl, symbol_short, testutils::Address as TestAddress, vec,
-    Address, Env, TryIntoVal, Val, Vec,
+    contract, contracterror, contractimpl, contracttype, symbol_short,
+    testutils::Address as TestAddress, vec, Address, BytesN, Env, TryIntoVal, Val, Vec,
 };
 
-use crate::contract::{
-    AuthRequest, Bundle, UTXOAuthContract, UTXOAuthContractArgs, UTXOAuthContractClient,
-    UtxoSpendAuth,
+use crate::{
+    contract::{UTXOAuthContract, UTXOAuthContractArgs, UTXOAuthContractClient},
+    payload::{AuthPayload, SpendingCondition},
+    signature::SignerKey,
 };
 
 #[contract]
@@ -27,26 +28,39 @@ pub enum Error {
     Intoval = 1,
 }
 
+#[derive(Clone)]
+#[contracttype]
+pub struct SpendBundle {
+    pub spend: Vec<BytesN<65>>,
+    pub create: Vec<(BytesN<65>, i128)>,
+}
+
 #[contractimpl]
 impl TestContract {
     pub fn auth_address(e: Env) -> Address {
         e.storage().instance().get(&"utxo_auth").unwrap()
     }
 
-    pub fn transfer(e: Env, bundles: Vec<Bundle>) -> bool {
+    pub fn transfer(e: Env, bundles: Vec<SpendBundle>) -> bool {
         let utxo_auth: Address = e.storage().instance().get(&"utxo_auth").unwrap();
-        let action = symbol_short!("TRANSFER");
         for bundle in bundles.iter() {
+            let mut conditions: Vec<SpendingCondition> = vec![&e];
+            for (_i, (create_utxo, amount)) in bundle.create.iter().enumerate() {
+                conditions.push_back(SpendingCondition::Create(create_utxo.clone(), amount));
+            }
+
+            let spend_auth: AuthPayload = AuthPayload {
+                contract: e.current_contract_address(),
+                conditions: conditions.clone(),
+            };
+
             for (_i, spend_utxo) in bundle.spend.iter().enumerate() {
-                let spend_auth: UtxoSpendAuth = UtxoSpendAuth {
-                    pk: spend_utxo.clone(),
-                    bundle: bundle.clone(),
-                    action: action.clone(),
-                };
-                let auth_req = AuthRequest::Spend(spend_auth);
                 let args_vec: Vec<Val> = vec![
                     &e,
-                    auth_req
+                    SignerKey::P256(spend_utxo.clone())
+                        .try_into_val(&e)
+                        .unwrap(),
+                    spend_auth
                         .try_into_val(&e)
                         .unwrap_or_else(|_| panic!("intoval")),
                 ];

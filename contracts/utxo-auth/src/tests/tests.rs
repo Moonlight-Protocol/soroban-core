@@ -2,18 +2,17 @@
 use soroban_sdk::{
     symbol_short, vec,
     xdr::{self, SorobanAddressCredentials, ToXdr, VecM},
-    Address, BytesN, Env, Map, TryIntoVal, Val, Vec,
+    Address, BytesN, Env, IntoVal, Map, TryIntoVal, Val, Vec,
 };
 extern crate std;
 
 use utxo::tests::helpers::{generate_utxo_keypair, sign_hash};
 
 use crate::{
-    contract::{
-        bundle_payload, AuthRequest, Bundle, Signature, Signatures, SignerKey,
-        UTXOAuthContractClient, UtxoSpendAuth,
-    },
-    tests::helpers::{create_contracts, TestContractClient},
+    contract::UTXOAuthContractClient,
+    payload::{hash_payload, AuthPayload, SpendingCondition},
+    signature::{Signature, Signatures, SignerKey},
+    tests::helpers::{create_contracts, SpendBundle, TestContractClient},
 };
 
 #[test]
@@ -28,12 +27,20 @@ fn test_auth_bundle_success() {
     let utxo_keypair_a = generate_utxo_keypair(&e);
     let utxo_keypair_b = generate_utxo_keypair(&e);
 
-    let mut bundle_a = Bundle {
+    let mut bundle_a = SpendBundle {
         spend: vec![&e, utxo_keypair_a.public_key.clone()],
         create: vec![&e, (utxo_keypair_b.public_key.clone(), 250)],
     };
 
-    let hash_a = bundle_payload(&e, bundle_a.clone(), &symbol_short!("TRANSFER"));
+    let auth_payload: AuthPayload = AuthPayload {
+        contract: utxo_mock.address.clone(),
+        conditions: vec![
+            &e,
+            SpendingCondition::Create(utxo_keypair_b.public_key.clone(), 250),
+        ],
+    };
+
+    let hash_a = hash_payload(&e, &auth_payload);
 
     let signature_a: [u8; 64] = sign_hash(&utxo_keypair_a.secret_key, &hash_a);
 
@@ -56,15 +63,16 @@ fn test_auth_bundle_success() {
     //     sig: signature_bytes_a,
     // };
 
-    let spend_auth: UtxoSpendAuth = UtxoSpendAuth {
-        pk: utxo_keypair_a.public_key.clone(),
-        bundle: bundle_a.clone(),
-        action: symbol_short!("TRANSFER"),
-    };
-    let auth_req = AuthRequest::Spend(spend_auth);
+    // let spend_auth: UtxoSpendAuth = UtxoSpendAuth {
+    //     pk: utxo_keypair_a.public_key.clone(),
+    //     bundle: bundle_a.clone(),
+    //     action: symbol_short!("TRANSFER"),
+    // };
+    // let auth_req = AuthRequest::Spend(spend_auth);
     let args_vec: Vec<Val> = vec![
         &e,
-        auth_req
+        SignerKey::P256(utxo_keypair_a.public_key.clone()).into_val(&e),
+        auth_payload
             .try_into_val(&e)
             .unwrap_or_else(|_| panic!("intoval")),
     ];
