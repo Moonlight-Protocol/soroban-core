@@ -1,17 +1,10 @@
-// SignatureType {
-//     Ed25519,   // Native Stellar keys
-//     Secp256k1, // (secp256k1) used in Ethereum
-//     P256,      // (secp256r1) passkeys used in webauthn
-//     BLS12_381, // BLS signatures
-// }
+#![no_std]
 
-use soroban_sdk::{contracttype, crypto::Hash, BytesN, Env, Map};
-
-use crate::contract::Error;
+use soroban_sdk::{contracterror, contracttype, crypto::Hash, BytesN, Env, Map};
 
 #[contracttype]
 #[derive(Clone, Debug)]
-pub struct Signatures(pub Map<SignerKey, Signature>);
+pub struct Signatures(pub Map<SignerKey, (Signature, u32)>);
 
 #[contracttype]
 #[derive(Clone, Debug)]
@@ -64,4 +57,12 @@ pub fn verify_signature(
         }
         _ => Err(Error::InvalidSignatureFormat),
     }
+}
+
+#[contracterror]
+#[derive(Copy, Clone, Eq, PartialEq, Debug)]
+#[repr(u32)]
+pub enum Error {
+    InvalidSignatureFormat = 501,
+    UnsupportedSignatureFormat = 502,
 }

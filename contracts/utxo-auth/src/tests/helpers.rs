@@ -1,6 +1,7 @@
 #![cfg(test)]
 use core::panic;
 
+use signature::SignerKey;
 use soroban_sdk::{
     contract, contracterror, contractimpl, contracttype, symbol_short,
     testutils::Address as TestAddress, vec, Address, BytesN, Env, TryIntoVal, Val, Vec,
@@ -9,7 +10,6 @@ use soroban_sdk::{
 use crate::{
     contract::{UTXOAuthContract, UTXOAuthContractArgs, UTXOAuthContractClient},
     payload::{AuthPayload, SpendingCondition},
-    signature::SignerKey,
 };
 
 #[contract]

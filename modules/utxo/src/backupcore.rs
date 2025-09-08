@@ -1,24 +1,9 @@
-use soroban_sdk::{contracttrait, contracttype, crypto::Hash, Address, Bytes, BytesN, Env, Vec};
+use soroban_sdk::{contracttype, crypto::Hash, Bytes, BytesN, Env, Vec};
 
 #[cfg(not(all(feature = "no-utxo-events", feature = "no-delegate-events")))]
 use soroban_sdk::symbol_short;
 
 use crate::emit_optional_event;
-
-#[derive(Clone)]
-#[contracttype]
-pub struct AuthPayload {
-    pub contract: Address,
-    pub conditions: Vec<Condition>,
-}
-
-#[derive(Clone)]
-#[contracttype]
-pub enum Condition {
-    Create(BytesN<65>, i128),                    // Spend to create new UTXOs
-    Withdraw(Address, i128),                     // Spend to withdraw to an account
-    Integration(Address, Vec<BytesN<65>>, i128), // contract id of the adapter, the utxo(s) for withdrawal, the amount to deposit
-}
 
 #[derive(Clone)]
 #[contracttype]
@@ -36,18 +21,10 @@ pub enum UtxoState {
 #[derive(Clone)]
 #[contracttype]
 pub struct Bundle {
-    pub spend: Vec<(BytesN<65>, Condition)>,
+    pub spend: Vec<BytesN<65>>,
     pub create: Vec<(BytesN<65>, i128)>,
-    pub account_signer: Vec<Condition>,
+    pub signatures: Vec<BytesN<64>>,
 }
-
-// #[derive(Clone)]
-// #[contracttype]
-// pub struct ExternalBundle {
-//     pub signer_account: Address,
-//     pub create: Vec<(BytesN<65>, i128)>,
-//     pub conditions: Vec<Condition>,
-// }
 
 #[derive(Clone)]
 #[contracttype]
@@ -63,116 +40,21 @@ pub struct BurnRequest {
     pub signature: BytesN<64>,
 }
 
-#[contracttrait]
-pub trait UtxoHandlerTrait {
-    /// Returns the balance of a given UTXO.
-    ///
-    /// If the UTXO is unspent, the stored balance is returned.
-    /// If the UTXO is spent, 0 is returned.
-    /// If no record exists for the UTXO (represented by –1), it is considered free to be created.
-    fn utxo_balance(e: Env, utxo: BytesN<65>) -> i128 {
-        match e
-            .storage()
-            .persistent()
-            .get::<_, UtxoState>(&DataKey::UTXO(hash_utxo_key(&e, &utxo)))
-        {
-            Some(UtxoState::Unspent(amount)) => amount,
-            Some(UtxoState::Spent) => 0,
-            None => -1,
-        }
+/// Returns the balance of a given UTXO.
+///
+/// If the UTXO is unspent, the stored balance is returned.
+/// If the UTXO is spent, 0 is returned.
+/// If no record exists for the UTXO (represented by –1), it is considered free to be created.
+pub fn utxo_balance(e: Env, utxo: BytesN<65>) -> i128 {
+    match e
+        .storage()
+        .persistent()
+        .get::<_, UtxoState>(&DataKey::UTXO(hash_utxo_key(&e, &utxo)))
+    {
+        Some(UtxoState::Unspent(amount)) => amount,
+        Some(UtxoState::Spent) => 0,
+        None => -1,
     }
-
-    /// Mints multiple UTXOs in a single call.
-    ///
-    /// Processes each mint request—each containing a UTXO identifier and a balance—sequentially,
-    /// ensuring that no UTXO is minted more than once.
-    ///
-    ///### Panics
-    /// - Panics if any UTXO in the batch already exists.
-    #[internal]
-    fn mint(e: &Env, requests: Vec<MintRequest>) {
-        for req in requests.iter() {
-            mint(e, req.amount, req.utxo.clone());
-        }
-    }
-
-    /// Burns multiple UTXOs in a single call.
-    ///
-    /// Each burn request consists of a UTXO identifier and a corresponding signature.
-    /// The signature for each UTXO must be generated using the secret key corresponding to the UTXO's public key,
-    /// and must be valid over the burn payload (which is derived from "BURN", the UTXO’s public key, and the amount).
-    ///
-    /// ### Panics
-    /// - Panics if any signature verification fails.
-    /// - Panics if any UTXO is already spent or does not exist.
-    #[internal]
-    fn burn(e: &Env, requests: Vec<BurnRequest>) {
-        for req in requests.iter() {
-            burn(e, req.utxo.clone(), req.signature.clone());
-        }
-    }
-
-    #[internal]
-    fn process_bundles(e: Env, bundles: Vec<Bundle>) -> i128 {
-        let mut total_unused_balance = 0;
-
-        for bundle in spend_bundles {
-            let unused_balance = process_bundle(e.clone(), bundle);
-            total_unused_balance += unused_balance;
-        }
-
-        Ok(total_unused_balance)
-    }
-}
-
-fn process_bundle(e: Env, bundle: Bundle, incoming_amount: i128) -> i128 {
-    let mut total_balance = incoming_amount;
-
-    //verify duplicates sepnd
-    // verify duplicates create
-    // verify duplicates account_signer
-
-    let total_required_to_create: i128 = bundle.create.iter().map(|(_, amt)| amt).sum::<i128>();
-    let total_available_from_spend: i128 = bundle
-        .spend
-        .iter()
-        .map(|(utxo, _)| verify_utxo_unspent(&e, utxo))
-        .sum::<i128>();
-
-    total_balance += total_available_from_spend;
-
-    assert!(
-        total_balance >= total_required_to_create,
-        "Insufficient funds in bundle to create UTXOs"
-    );
-
-    for (spend_utxo, conditions) in bundle.spend.iter() {
-        let unspent_balance = verify_utxo_unspent(&e, spend_utxo.clone());
-        unchecked_spend(&e, spend_utxo.clone(), unspent_balance); // verified above
-        total_balance += unspent_balance;
-    }
-
-    if bundle.spend.len() != bundle.signatures.len() {
-        panic!("Bundle has mismatched spend and signature lengths");
-    }
-
-    if bundle.spend.len() == 0 {
-        panic!("Bundle must have at least one spend UTXO"); // create is not enforced as it can be managed by the caller for other purposes
-    }
-
-    let mut bundle_funds = 0;
-    for utxo in bundle.spend.iter() {
-        let unspent_balance = verify_utxo_unspent(&e, utxo.clone());
-        unchecked_spend(&e, utxo.clone(), unspent_balance); // verified above
-        bundle_funds += unspent_balance;
-    }
-
-    for (utxo, amount) in bundle.create.iter() {
-        create(&e, amount, utxo.clone());
-        bundle_funds -= amount;
-    }
-
-    bundle_funds
 }
 
 /// Mints a new UTXO with the specified balance.
@@ -181,8 +63,21 @@ fn process_bundle(e: Env, bundle: Bundle, incoming_amount: i128) -> i128 {
 ///
 ///### Panics
 /// - Panics if the UTXO already exists.
-fn mint(e: &Env, amount: i128, utxo: BytesN<65>) {
+pub fn mint(e: &Env, amount: i128, utxo: BytesN<65>) {
     create(&e, amount, utxo);
+}
+
+/// Mints multiple UTXOs in a single call.
+///
+/// Processes each mint request—each containing a UTXO identifier and a balance—sequentially,
+/// ensuring that no UTXO is minted more than once.
+///
+///### Panics
+/// - Panics if any UTXO in the batch already exists.
+pub fn mint_batch(e: &Env, requests: Vec<MintRequest>) {
+    for req in requests.iter() {
+        mint(e, req.amount, req.utxo.clone());
+    }
 }
 
 /// Burns the specified UTXO after verifying its authorization signature.
@@ -194,9 +89,24 @@ fn mint(e: &Env, amount: i128, utxo: BytesN<65>) {
 /// ### Panics
 /// - Panics if signature verification fails.
 /// - Panics if the UTXO is already spent or does not exist.
-fn burn(e: &Env, utxo: BytesN<65>, signature: BytesN<64>) {
+pub fn burn(e: &Env, utxo: BytesN<65>, signature: BytesN<64>) {
     verify_burn_signature(&e, &utxo, &signature);
     spend(&e, utxo);
+}
+
+/// Burns multiple UTXOs in a single call.
+///
+/// Each burn request consists of a UTXO identifier and a corresponding signature.
+/// The signature for each UTXO must be generated using the secret key corresponding to the UTXO's public key,
+/// and must be valid over the burn payload (which is derived from "BURN", the UTXO’s public key, and the amount).
+///
+/// ### Panics
+/// - Panics if any signature verification fails.
+/// - Panics if any UTXO is already spent or does not exist.
+pub fn burn_batch(e: &Env, requests: Vec<BurnRequest>) {
+    for req in requests.iter() {
+        burn(e, req.utxo.clone(), req.signature.clone());
+    }
 }
 
 /// Executes atomic multi-UTXO transfers by processing each bundle.
@@ -266,55 +176,43 @@ pub fn delegated_transfer(e: &Env, bundles: Vec<Bundle>, delegate_utxo: BytesN<6
     );
 }
 
+/// Constructs the payload for burning a UTXO.
+///
+/// The payload is built by concatenating:
+/// - The literal "BURN" (4 bytes),
+/// - The 65-byte public key associated with the UTXO,
+/// - The 8-byte little-endian representation of the UTXO's amount.
+///
+/// This payload is then hashed (using SHA-256) to produce a digest that is used for signature verification.
+pub fn burn_payload(e: &Env, utxo: &BytesN<65>, amount: i128) -> Hash<32> {
+    let mut b = Bytes::new(&e);
+    b.append(&Bytes::from_slice(&e, b"BURN"));
+    b.append(&Bytes::from_slice(&e, utxo.to_array().as_ref()));
+    b.append(&Bytes::from_slice(&e, &amount.to_le_bytes()));
+
+    e.crypto().sha256(&b)
+}
+
 /// Constructs the payload for processing a bundle of UTXO operations.
 ///
-/// The payload is built by concatenating in order:
-///  - The contract address (32 bytes),
-///  - The literal "CREATE" (6 bytes), followed by all `create` conditions,
-///  - The literal "WITHDRAW" (8 bytes), followed by all `withdraw` conditions,
-///  - The literal "INTEGRATE" (9 bytes), followed by all `integration` conditions.
+/// The payload is built by concatenating:
+/// - The literal "BUNDLE" (6 bytes),
+/// - The provided action string (e.g., "TRANSFER", "DELEGATED_TRANSFER", "CUSTOM"),
+/// - For each UTXO in the `spend` list: its 65-byte public key,
+/// - For each entry in the `create` list: the UTXO's 65-byte public key followed by its 8-byte little-endian amount.
 ///
-/// The resulting byte stream is hashed using SHA-256 to produce a digest that is
-/// used for verifying the signatures of the bundle.
-///
-/// For consistency, all integer amounts are encoded as little-endian 8-byte sequences.
-/// UTXO identifiers are represented as their raw byte arrays. Also it is suggested to sort
-/// the conditions in the same ordering as they are defined in the original bundle  to ensure
-/// deterministic payloads.
-///
-pub fn hash_payload(e: &Env, auth_payload: &AuthPayload) -> Hash<32> {
+/// The resulting byte stream is hashed using SHA-256 to produce a digest that is used for verifying the signatures of the bundle.
+pub fn bundle_payload(e: &Env, bundle: Bundle, action: &str) -> Hash<32> {
     let mut b = Bytes::new(&e);
-    b.append(&auth_payload.contract.clone().to_xdr(&e));
-
-    let mut b_create = Bytes::new(&e);
-    b_create.append(&Bytes::from_slice(&e, b"CREATE"));
-    let mut b_withdraw = Bytes::new(&e);
-    b_withdraw.append(&Bytes::from_slice(&e, b"WITHDRAW"));
-    let mut b_integrate = Bytes::new(&e);
-    b_integrate.append(&Bytes::from_slice(&e, b"INTEGRATE"));
-
-    for cond in auth_payload.conditions.iter() {
-        match cond {
-            SpendingCondition::Create(utxo, amount) => {
-                b_create.append(&Bytes::from_slice(&e, utxo.to_array().as_ref()));
-                b_create.append(&Bytes::from_slice(&e, &amount.to_le_bytes()));
-            }
-            SpendingCondition::Withdraw(addr, amount) => {
-                b_withdraw.append(&addr.to_xdr(&e));
-                b_withdraw.append(&Bytes::from_slice(&e, &amount.to_le_bytes()));
-            }
-            SpendingCondition::Integration(adapter, utxos, amount) => {
-                b_integrate.append(&adapter.to_xdr(&e));
-                for utxo in utxos.iter() {
-                    b_integrate.append(&Bytes::from_slice(&e, utxo.to_array().as_ref()));
-                }
-                b_integrate.append(&Bytes::from_slice(&e, &amount.to_le_bytes()));
-            }
-        }
+    b.append(&Bytes::from_slice(&e, b"BUNDLE"));
+    b.append(&Bytes::from_slice(e, action.as_bytes()));
+    for utxo in bundle.spend.iter() {
+        b.append(&Bytes::from_slice(&e, utxo.to_array().as_ref()));
     }
-    b.append(&b_create);
-    b.append(&b_withdraw);
-    b.append(&b_integrate);
+    for (utxo, amount) in bundle.create.iter() {
+        b.append(&Bytes::from_slice(&e, utxo.to_array().as_ref()));
+        b.append(&Bytes::from_slice(&e, &amount.to_le_bytes()));
+    }
 
     e.crypto().sha256(&b)
 }
@@ -359,9 +257,6 @@ fn bundle_transfer(e: Env, bundle: Bundle) -> i128 {
 
     let mut bundle_funds = 0;
     for utxo in bundle.spend.iter() {
-        // verify conditions agains bundle
-        // verify signing
-        // spend
         let unspent_balance = verify_utxo_unspent(&e, utxo.clone());
         unchecked_spend(&e, utxo.clone(), unspent_balance); // verified above
         bundle_funds += unspent_balance;

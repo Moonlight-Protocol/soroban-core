@@ -1,7 +1,6 @@
 [workspace]
 members = [
-  "modules/utxo",
-  "modules/provider-management",
+  "modules/*",
   "contracts/*",
 ]
 resolver = "2"
@@ -28,6 +27,7 @@ tag = "v0.3.0"
 
 [workspace.dependencies]
 utxo = { path = "modules/utxo" }
+signature = { path = "modules/signature" }
 provider-management = { path = "modules/provider-management" }
 
 

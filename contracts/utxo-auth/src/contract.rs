@@ -1,4 +1,5 @@
 use admin_sep::{Administratable, Upgradable};
+use signature::{verify_signature, Error as SigError, Signatures, SignerKey};
 use soroban_sdk::{
     auth::{Context, CustomAccountInterface},
     contract, contracterror, contractimpl, contracttype,
@@ -7,10 +8,7 @@ use soroban_sdk::{
     Address, Bytes, BytesN, Env, Map, Symbol, TryIntoVal, Vec,
 };
 
-use crate::{
-    payload::{hash_payload, AuthPayload},
-    signature::{verify_signature, Signatures, SignerKey},
-};
+use crate::payload::{hash_payload, AuthPayload};
 
 #[contract]
 pub struct UTXOAuthContract;
@@ -141,4 +139,13 @@ pub enum Error {
     NoConditions = 11,
     UnexpectedContext = 12,
     Test = 999, // for debugging
+}
+
+impl From<SigError> for Error {
+    fn from(e: SigError) -> Self {
+        match e {
+            SigError::InvalidSignatureFormat => Error::InvalidSignatureFormat,
+            SigError::UnsupportedSignatureFormat => Error::UnsupportedSignatureFormat,
+        }
+    }
 }
