@@ -14,8 +14,10 @@ doctest = false
 [dependencies]
 soroban-sdk = { git = "https://github.com/AhaLabs/rs-soroban-sdk", rev = "5a99659f1483c926ff87ea45f8823b8c00dc4cbd" }
 admin-sep = { git = "https://github.com/AhaLabs/admin-sep", rev = "bf195f4d67cc96587974212f998680ccf9a61cd7" }
-signature = {workspace = true}
+moonlight-utxo-core  = { workspace = true}
+moonlight-auth  = { workspace = true}
 
 [dev-dependencies]
 soroban-sdk = { git = "https://github.com/AhaLabs/rs-soroban-sdk", rev = "5a99659f1483c926ff87ea45f8823b8c00dc4cbd", features = ["testutils"] }
-utxo = { workspace = true, features = ["testutils"] }
+moonlight-utxo-core = { workspace = true, features = ["testutils"] }
+moonlight-helpers = { workspace = true, features = ["testutils"] }

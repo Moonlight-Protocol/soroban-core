@@ -1,0 +1,263 @@
+use moonlight_auth::{AuthRequirements, Condition, SignerKey};
+use soroban_sdk::{
+    contracttrait, contracttype, crypto::Hash, vec, xdr::ToXdr, Address, Bytes, BytesN, Env,
+    IntoVal, Map, Symbol, Vec,
+};
+
+#[cfg(not(all(feature = "no-utxo-events", feature = "no-delegate-events")))]
+use soroban_sdk::symbol_short;
+
+use crate::emit_optional_event;
+
+// #[derive(Clone)]
+// #[contracttype]
+// pub enum Condition {
+//     Create(BytesN<65>, i128),                       // Spend to create new UTXOs
+//     ExtDeposit(Address, i128),                      // Spend to deposit to an account
+//     ExtWithdraw(Address, i128),                     // Spend to withdraw to an account
+//     ExtIntegration(Address, Vec<BytesN<65>>, i128), // contract id of the adapter, the keys to authorize the withdrawal, the amount to deposit
+// }
+
+// #[derive(Clone)]
+// #[contracttype]
+// pub struct AuthRequirements(pub Map<SignerKey, Vec<Condition>>);
+
+// #[derive(Clone)]
+// #[contracttype]
+// pub struct AuthPayload {
+//     pub contract: Address,
+//     pub conditions: Vec<Condition>,
+//     pub live_until_ledger: u32,
+// }
+
+#[derive(Clone)]
+#[contracttype]
+pub enum UTXOCoreDataKey {
+    UTXO(BytesN<32>), // 32-byte hash of 65-byte pubkey to reduce storage costs
+}
+
+#[derive(Clone)]
+#[contracttype]
+pub enum UtxoState {
+    Unspent(i128), // takes 1-byte tag + 16 bytes value
+    Spent,         // only 1-byte tag (optimizing for read/write size)
+}
+
+#[derive(Clone)]
+#[contracttype]
+pub struct Bundle {
+    pub spend: Vec<BytesN<65>>,
+    pub create: Vec<(BytesN<65>, i128)>,
+    pub req: AuthRequirements,
+}
+
+#[derive(Clone)]
+#[contracttype]
+pub struct OperationBundle {
+    pub spend: Vec<(BytesN<65>, Vec<Condition>)>,
+    pub create: Vec<(BytesN<65>, i128)>,
+}
+
+// #[derive(Clone)]
+// #[contracttype]
+// pub struct ExternalBundle {
+//     pub signer_account: Address,
+//     pub create: Vec<(BytesN<65>, i128)>,
+//     pub conditions: Vec<Condition>,
+// }
+
+#[derive(Clone)]
+#[contracttype]
+pub struct MintRequest {
+    pub utxo: BytesN<65>,
+    pub amount: i128,
+}
+
+#[derive(Clone)]
+#[contracttype]
+pub struct BurnRequest {
+    pub utxo: BytesN<65>,
+    pub signature: BytesN<64>,
+}
+
+pub const STORAGE_KEY_UTXO_AUTH: &Symbol = &symbol_short!("UTXO_AUTH");
+
+#[contracttrait]
+pub trait UtxoHandlerTrait {
+    // add trait later to utxo auth
+
+    #[internal]
+    fn utxo_auth_from_storage(env: &Env) -> Option<Address> {
+        env.storage().instance().get(STORAGE_KEY_UTXO_AUTH)
+    }
+
+    fn utxo_auth(env: &Env) -> soroban_sdk::Address {
+        unsafe { Self::utxo_auth_from_storage(env).unwrap_unchecked() }
+    }
+
+    fn set_utxo_auth(env: &Env, new_auth: &soroban_sdk::Address) {
+        // if let Some(prior_auth) = Self::utxo_auth_from_storage(env) {
+        //     owner.require_auth();
+        // }
+        env.storage()
+            .instance()
+            .set(STORAGE_KEY_UTXO_AUTH, new_auth);
+    }
+
+    /// Returns the balance of a given UTXO.
+    ///
+    /// If the UTXO is unspent, the stored balance is returned.
+    /// If the UTXO is spent, 0 is returned.
+    /// If no record exists for the UTXO (represented by –1), it is considered free to be created.
+    fn utxo_balance(e: Env, utxo: BytesN<65>) -> i128 {
+        match e
+            .storage()
+            .persistent()
+            .get::<_, UtxoState>(&UTXOCoreDataKey::UTXO(Self::hash_utxo_key(&e, &utxo)))
+        {
+            Some(UtxoState::Unspent(amount)) => amount,
+            Some(UtxoState::Spent) => 0,
+            None => -1,
+        }
+    }
+
+    fn transact(e: Env, op: OperationBundle) -> i128;
+
+    #[internal]
+    fn process_bundle(
+        e: Env,
+        bundle: Bundle,
+        incoming_amount: i128,
+        expected_outgoing: i128,
+    ) -> i128 {
+        let mut total_available_balance = incoming_amount;
+
+        if !no_duplicate_keys(&e, bundle.spend.iter(), |spend_utxo| spend_utxo.clone()) {
+            panic!("duplicate UTXO in bundle.spend");
+        }
+        if !no_duplicate_keys(&e, bundle.create.iter(), |(create_utxo, _amt)| {
+            create_utxo.clone()
+        }) {
+            panic!("duplicate UTXO in bundle.create");
+        }
+
+        Self::utxo_auth(&e).require_auth_for_args(vec![&e, bundle.req.clone().into_val(&e)]);
+
+        for spend_utxo in bundle.spend.iter() {
+            let unspent_balance = Self::spend(&e, spend_utxo.clone());
+            total_available_balance += unspent_balance;
+        }
+
+        for (create_utxo, amount) in bundle.create.iter() {
+            assert!(
+                amount > 0,
+                "Cannot create UTXO with zero or negative balance"
+            );
+            assert!(
+                total_available_balance >= amount,
+                "Insufficient funds in bundle to create UTXOs"
+            );
+
+            Self::create(&e, amount, create_utxo.clone());
+
+            total_available_balance -= amount;
+        }
+
+        assert!(
+            total_available_balance == expected_outgoing,
+            "The bundle do not balance properly!"
+        );
+
+        total_available_balance
+
+        // bundle_funds
+    }
+
+    /// Creates a new UTXO with the specified balance after verifying it does not already exist.
+    ///
+    /// Creates a new UTXO associated with the given balance. The UTXO must not already exist.
+    ///
+    ///### Panics
+    /// - Panics if the UTXO already exists.
+    #[internal]
+    fn create(e: &Env, amount: i128, utxo: BytesN<65>) {
+        Self::verify_utxo_not_exists(&e, utxo.clone());
+        Self::unchecked_create(e, amount, utxo);
+    }
+
+    /// Spends the specified UTXO after verifying its state.
+    ///
+    /// This function requires an ECDSA signature over a burn payload that is deterministically derived
+    /// by concatenating the literal "BURN", the UTXO’s 65-byte public key, and the amount (as an 8-byte little-endian value).
+    /// The signature must be generated using the secret key corresponding to the UTXO's public key, and is verified using secp256r1.
+    ///
+    /// ### Panics
+    /// - Panics if signature verification fails.
+    /// - Panics if the UTXO is already spent or does not exist.
+    #[internal]
+    fn spend(e: &Env, utxo: BytesN<65>) -> i128 {
+        let amount = Self::verify_utxo_unspent(&e, utxo.clone());
+        Self::unchecked_spend(&e, utxo.clone(), amount);
+        amount
+    }
+
+    #[internal]
+    fn unchecked_create(e: &Env, amount: i128, utxo: BytesN<65>) {
+        let key = UTXOCoreDataKey::UTXO(Self::hash_utxo_key(&e, &utxo));
+        e.storage()
+            .persistent()
+            .set(&key, &UtxoState::Unspent(amount));
+        emit_optional_event!("utxo", e, utxo, symbol_short!("create"), amount);
+    }
+
+    #[internal]
+    fn unchecked_spend(e: &Env, utxo: BytesN<65>, _amount: i128) {
+        let key = UTXOCoreDataKey::UTXO(Self::hash_utxo_key(&e, &utxo));
+        e.storage().persistent().set(&key, &UtxoState::Spent);
+        emit_optional_event!("utxo", e, utxo, symbol_short!("spend"), _amount);
+    }
+
+    #[internal]
+    // hash the UTXO key to reduce storage costs
+    // by using a 32-byte hash instead of a 65-byte pubkey
+    // this doesn't affect the behavior of the contract
+    fn hash_utxo_key(e: &Env, utxo: &BytesN<65>) -> BytesN<32> {
+        let utxo_bytes = Bytes::from_slice(&e, utxo.to_array().as_ref());
+        let hash = e.crypto().sha256(&utxo_bytes);
+        BytesN::<32>::from_array(&e, &hash.to_array())
+    }
+
+    #[internal]
+    fn verify_utxo_not_exists(e: &Env, utxo: BytesN<65>) {
+        let key = UTXOCoreDataKey::UTXO(Self::hash_utxo_key(&e, &utxo));
+        if e.storage().persistent().get::<_, UtxoState>(&key).is_some() {
+            panic!("UTXO already exists");
+        }
+    }
+
+    #[internal]
+    fn verify_utxo_unspent(e: &Env, utxo: BytesN<65>) -> i128 {
+        let key = UTXOCoreDataKey::UTXO(Self::hash_utxo_key(&e, &utxo));
+        match e.storage().persistent().get::<_, UtxoState>(&key) {
+            Some(UtxoState::Unspent(amount)) => amount,
+            _ => panic!("UTXO spent or nonexistent"),
+        }
+    }
+}
+
+// Returns true if all keys produced by key_fn are unique, false if any duplicate appears.
+fn no_duplicate_keys<I, F>(e: &Env, iter: I, mut key_fn: F) -> bool
+where
+    I: IntoIterator,
+    F: FnMut(I::Item) -> BytesN<65>,
+{
+    let mut seen: soroban_sdk::Map<BytesN<65>, bool> = soroban_sdk::Map::new(e);
+    for item in iter {
+        let k = key_fn(item);
+        if seen.contains_key(k.clone()) {
+            return false;
+        }
+        seen.set(k, true);
+    }
+    true
+}

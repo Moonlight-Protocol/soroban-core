@@ -26,9 +26,11 @@ git = "https://github.com/OpenZeppelin/stellar-contracts"
 tag = "v0.3.0"
 
 [workspace.dependencies]
-utxo = { path = "modules/utxo" }
-signature = { path = "modules/signature" }
-provider-management = { path = "modules/provider-management" }
+moonlight-utxo-core = { path = "modules/utxo-core" }
+moonlight-auth = { path = "modules/auth" }
+moonlight-helpers = { path = "modules/helpers" }
+
+
 
 
 [profile.release]
