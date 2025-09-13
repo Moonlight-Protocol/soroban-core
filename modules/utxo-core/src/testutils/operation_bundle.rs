@@ -1,4 +1,4 @@
-use moonlight_auth::{
+use moonlight_auth::core::{
     hash_payload, AuthPayload, AuthRequirements, Condition, Signature, Signatures, SignerKey,
 };
 use moonlight_helpers::parser::address_to_ed25519_pk_bytes;
@@ -171,13 +171,7 @@ impl UTXOOperationBuilder {
     }
 
     pub fn calculate_auth_requirements(&self, e: &Env) -> AuthRequirements {
-        let mut map_req: Map<SignerKey, Vec<Condition>> = Map::new(&e);
-
-        for (spend_utxo, conditions) in self.spend.iter() {
-            map_req.set(SignerKey::P256(spend_utxo.clone()), conditions.clone());
-        }
-
-        AuthRequirements(map_req)
+        calculate_auth_requirements(&e, &self.spend.clone())
     }
 
     pub fn get_contract_auth_args(&self, e: &Env) -> Vec<Val> {
@@ -306,4 +300,18 @@ impl UTXOOperationBuilder {
             Self::verify_condition_does_not_conflict_with_set(cond.clone(), conditions_b.clone());
         }
     }
+}
+
+// This should be different depending on the contract impl
+pub fn calculate_auth_requirements(
+    e: &Env,
+    spend: &Vec<(BytesN<65>, Vec<Condition>)>,
+) -> AuthRequirements {
+    let mut map_req: Map<SignerKey, Vec<Condition>> = Map::new(&e);
+
+    for (spend_utxo, conditions) in spend.iter() {
+        map_req.set(SignerKey::P256(spend_utxo.clone()), conditions.clone());
+    }
+
+    AuthRequirements(map_req)
 }

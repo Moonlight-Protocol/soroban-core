@@ -1,34 +1,14 @@
-use moonlight_auth::{AuthRequirements, Condition, SignerKey};
+use moonlight_auth::core::{AuthRequirements, Condition};
 use soroban_sdk::{
-    contracttrait, contracttype, crypto::Hash, vec, xdr::ToXdr, Address, Bytes, BytesN, Env,
-    IntoVal, Map, Symbol, Vec,
+    assert_with_error, contracterror, contracttrait, contracttype, panic_with_error, vec, Bytes,
+    BytesN, Env, IntoVal, Symbol, Vec,
 };
 
-#[cfg(not(all(feature = "no-utxo-events", feature = "no-delegate-events")))]
 use soroban_sdk::symbol_short;
 
-use crate::emit_optional_event;
-
-// #[derive(Clone)]
-// #[contracttype]
-// pub enum Condition {
-//     Create(BytesN<65>, i128),                       // Spend to create new UTXOs
-//     ExtDeposit(Address, i128),                      // Spend to deposit to an account
-//     ExtWithdraw(Address, i128),                     // Spend to withdraw to an account
-//     ExtIntegration(Address, Vec<BytesN<65>>, i128), // contract id of the adapter, the keys to authorize the withdrawal, the amount to deposit
-// }
-
-// #[derive(Clone)]
-// #[contracttype]
-// pub struct AuthRequirements(pub Map<SignerKey, Vec<Condition>>);
-
-// #[derive(Clone)]
-// #[contracttype]
-// pub struct AuthPayload {
-//     pub contract: Address,
-//     pub conditions: Vec<Condition>,
-//     pub live_until_ledger: u32,
-// }
+#[cfg(not(feature = "no-bundle-events"))]
+use crate::events::BundleEvent;
+use crate::events::UtxoEvent;
 
 #[derive(Clone)]
 #[contracttype]
@@ -58,47 +38,31 @@ pub struct OperationBundle {
     pub create: Vec<(BytesN<65>, i128)>,
 }
 
-// #[derive(Clone)]
-// #[contracttype]
-// pub struct ExternalBundle {
-//     pub signer_account: Address,
-//     pub create: Vec<(BytesN<65>, i128)>,
-//     pub conditions: Vec<Condition>,
-// }
-
-#[derive(Clone)]
-#[contracttype]
-pub struct MintRequest {
-    pub utxo: BytesN<65>,
-    pub amount: i128,
-}
-
-#[derive(Clone)]
-#[contracttype]
-pub struct BurnRequest {
-    pub utxo: BytesN<65>,
-    pub signature: BytesN<64>,
-}
-
 pub const STORAGE_KEY_UTXO_AUTH: &Symbol = &symbol_short!("UTXO_AUTH");
+
+#[contracterror]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
+#[repr(u32)]
+pub enum Error {
+    UTXOAlreadyExists = 1,
+    UTXODoesntExist = 2,
+    UTXOAlreadySpent = 3,
+    UnbalancedBundle = 4,
+    InvalidCreateAmount = 5,
+    RepeatedCreateUTXO = 6,
+    RepeatedSpendUTXO = 7,
+}
 
 #[contracttrait]
 pub trait UtxoHandlerTrait {
-    // add trait later to utxo auth
-
-    #[internal]
-    fn utxo_auth_from_storage(env: &Env) -> Option<Address> {
-        env.storage().instance().get(STORAGE_KEY_UTXO_AUTH)
-    }
-
     fn utxo_auth(env: &Env) -> soroban_sdk::Address {
-        unsafe { Self::utxo_auth_from_storage(env).unwrap_unchecked() }
+        env.storage()
+            .instance()
+            .get(STORAGE_KEY_UTXO_AUTH)
+            .unwrap_or_else(|| panic!("UTXO auth not set"))
     }
 
     fn set_utxo_auth(env: &Env, new_auth: &soroban_sdk::Address) {
-        // if let Some(prior_auth) = Self::utxo_auth_from_storage(env) {
-        //     owner.require_auth();
-        // }
         env.storage()
             .instance()
             .set(STORAGE_KEY_UTXO_AUTH, new_auth);
@@ -121,8 +85,6 @@ pub trait UtxoHandlerTrait {
         }
     }
 
-    fn transact(e: Env, op: OperationBundle) -> i128;
-
     #[internal]
     fn process_bundle(
         e: Env,
@@ -133,12 +95,12 @@ pub trait UtxoHandlerTrait {
         let mut total_available_balance = incoming_amount;
 
         if !no_duplicate_keys(&e, bundle.spend.iter(), |spend_utxo| spend_utxo.clone()) {
-            panic!("duplicate UTXO in bundle.spend");
+            panic_with_error!(&e, Error::RepeatedSpendUTXO);
         }
         if !no_duplicate_keys(&e, bundle.create.iter(), |(create_utxo, _amt)| {
             create_utxo.clone()
         }) {
-            panic!("duplicate UTXO in bundle.create");
+            panic_with_error!(&e, Error::RepeatedCreateUTXO);
         }
 
         Self::utxo_auth(&e).require_auth_for_args(vec![&e, bundle.req.clone().into_val(&e)]);
@@ -149,24 +111,26 @@ pub trait UtxoHandlerTrait {
         }
 
         for (create_utxo, amount) in bundle.create.iter() {
-            assert!(
-                amount > 0,
-                "Cannot create UTXO with zero or negative balance"
-            );
-            assert!(
-                total_available_balance >= amount,
-                "Insufficient funds in bundle to create UTXOs"
-            );
-
             Self::create(&e, amount, create_utxo.clone());
 
             total_available_balance -= amount;
         }
 
-        assert!(
+        assert_with_error!(
+            &e,
             total_available_balance == expected_outgoing,
-            "The bundle do not balance properly!"
+            Error::UnbalancedBundle
         );
+
+        #[cfg(not(feature = "no-bundle-events"))]
+        BundleEvent {
+            name: soroban_sdk::symbol_short!("bundle"),
+            spend: bundle.spend.clone(),
+            create: bundle.create.clone(),
+            deposited: incoming_amount,
+            withdrawn: expected_outgoing,
+        }
+        .publish(&e);
 
         total_available_balance
 
@@ -182,6 +146,9 @@ pub trait UtxoHandlerTrait {
     #[internal]
     fn create(e: &Env, amount: i128, utxo: BytesN<65>) {
         Self::verify_utxo_not_exists(&e, utxo.clone());
+
+        assert_with_error!(&e, amount > 0, Error::InvalidCreateAmount);
+
         Self::unchecked_create(e, amount, utxo);
     }
 
@@ -207,20 +174,32 @@ pub trait UtxoHandlerTrait {
         e.storage()
             .persistent()
             .set(&key, &UtxoState::Unspent(amount));
-        emit_optional_event!("utxo", e, utxo, symbol_short!("create"), amount);
+        UtxoEvent {
+            name: symbol_short!("utxo"),
+            utxo,
+            action: symbol_short!("create"),
+            amount,
+        }
+        .publish(&e);
     }
 
     #[internal]
     fn unchecked_spend(e: &Env, utxo: BytesN<65>, _amount: i128) {
         let key = UTXOCoreDataKey::UTXO(Self::hash_utxo_key(&e, &utxo));
         e.storage().persistent().set(&key, &UtxoState::Spent);
-        emit_optional_event!("utxo", e, utxo, symbol_short!("spend"), _amount);
+        UtxoEvent {
+            name: symbol_short!("utxo"),
+            utxo,
+            action: symbol_short!("spend"),
+            amount: _amount,
+        }
+        .publish(&e);
     }
 
-    #[internal]
     // hash the UTXO key to reduce storage costs
     // by using a 32-byte hash instead of a 65-byte pubkey
     // this doesn't affect the behavior of the contract
+    #[internal]
     fn hash_utxo_key(e: &Env, utxo: &BytesN<65>) -> BytesN<32> {
         let utxo_bytes = Bytes::from_slice(&e, utxo.to_array().as_ref());
         let hash = e.crypto().sha256(&utxo_bytes);
@@ -230,17 +209,22 @@ pub trait UtxoHandlerTrait {
     #[internal]
     fn verify_utxo_not_exists(e: &Env, utxo: BytesN<65>) {
         let key = UTXOCoreDataKey::UTXO(Self::hash_utxo_key(&e, &utxo));
-        if e.storage().persistent().get::<_, UtxoState>(&key).is_some() {
-            panic!("UTXO already exists");
-        }
+
+        assert_with_error!(
+            &e,
+            e.storage().persistent().get::<_, UtxoState>(&key).is_none(),
+            Error::UTXOAlreadyExists
+        );
     }
 
     #[internal]
     fn verify_utxo_unspent(e: &Env, utxo: BytesN<65>) -> i128 {
         let key = UTXOCoreDataKey::UTXO(Self::hash_utxo_key(&e, &utxo));
+
         match e.storage().persistent().get::<_, UtxoState>(&key) {
             Some(UtxoState::Unspent(amount)) => amount,
-            _ => panic!("UTXO spent or nonexistent"),
+            Some(UtxoState::Spent) => panic_with_error!(&e, Error::UTXOAlreadySpent),
+            None => panic_with_error!(&e, Error::UTXODoesntExist),
         }
     }
 }

@@ -1,5 +1,7 @@
 #![no_std]
 pub mod core;
-pub mod macros;
+pub mod events;
+#[cfg(test)]
 pub mod tests;
-pub mod utxo_bundle;
+#[cfg(feature = "testutils")]
+pub mod testutils;

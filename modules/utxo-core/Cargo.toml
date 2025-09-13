@@ -6,9 +6,9 @@ edition = "2021"
 
 [features]
 # add all and soroban with testutils
-testutils = [ "soroban-sdk/testutils"]
+testutils = [ "soroban-sdk/testutils", "moonlight-helpers/testutils", "moonlight-utxo-core/testutils" ]
 no-utxo-events = [] # disable utxo events for cost optimization on bigger batches
-no-delegate-events = [] # disable delegate events for cost optimization
+no-bundle-events = [ ] # disable bundle events for cost optimization on bigger batches
 
 [lib]
 crate-type = ["rlib"]
@@ -28,9 +28,10 @@ moonlight-helpers = { workspace = true}
 
 [dev-dependencies]
 soroban-sdk = { git = "https://github.com/AhaLabs/rs-soroban-sdk", rev = "5a99659f1483c926ff87ea45f8823b8c00dc4cbd", features = ["testutils"] }
-
-# soroban-sdk = { workspace = true, features = ["testutils"] }
+moonlight-helpers = { workspace = true , features = ["testutils"] }
 moonlight-utxo-core = { workspace = true, features = ["testutils"] }
+
+
 # p256 = { version = "0.13.2", default-features = false, features = ["ecdsa", "arithmetic"]}
 # elliptic-curve = { version = "0.13.5", default-features = false}
 # rand_core = { version = "0.6"}
