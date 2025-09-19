@@ -1,0 +1,25 @@
+[package]
+name = "channel-auth-contract"
+description = "Channel Authentication"
+version = "0.0.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+doctest = false
+
+
+
+
+[dependencies]
+soroban-sdk = { workspace =   true }
+admin-sep = { workspace = true}
+moonlight-auth  = { workspace = true}
+moonlight-primitives  = { workspace = true}
+wee_alloc = {workspace = true}
+
+
+[dev-dependencies]
+soroban-sdk = { workspace = true, features = ["testutils"] }
+moonlight-utxo-core = { workspace = true, features = ["testutils"] }
+moonlight-helpers = { workspace = true, features = ["testutils"] }
