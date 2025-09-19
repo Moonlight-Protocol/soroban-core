@@ -1,0 +1,44 @@
+[package]
+name = "moonlight-helpers"
+description = "Helpers Module"
+version = "1.0.0"
+edition = "2021"
+
+[features]
+testutils = ["ed25519-dalek", "p256", "elliptic-curve","rand", "rand_core", "soroban-sdk/testutils"]
+
+
+
+[lib]
+crate-type = ["rlib"]
+doctest = false
+
+
+
+
+[dependencies]
+soroban-sdk = {workspace = true}
+stellar-strkey = { version = "0.0.13" }
+
+ed25519-dalek = { version = "1.0.1" , optional =    true}
+rand = { version = "0.7.3" , optional = true}
+p256 = { version = "0.13.2", default-features = false, features = ["ecdsa", "arithmetic"], optional = true}
+elliptic-curve = { version = "0.13.5", default-features = false, optional = true }
+rand_core = { version = "0.6",optional = true }
+
+
+
+[dev-dependencies]
+soroban-sdk = { workspace = true, features = ["testutils"] }
+p256 = { version = "0.13.2", default-features = false, features = ["ecdsa", "arithmetic"] }
+rand_core = { version = "0.6"}
+elliptic-curve = { version = "0.13.5", default-features = false}
+rand = { version = "0.7.3" }
+moonlight-helpers = { workspace = true, features = ["testutils"] }
+
+
+# soroban-sdk = { workspace = true, features = ["testutils"] }
+# utxo = { workspace = true, features = ["testutils"] }
+# p256 = { version = "0.13.2", default-features = false, features = ["ecdsa", "arithmetic"]}
+# elliptic-curve = { version = "0.13.5", default-features = false}
+# rand_core = { version = "0.6"}

@@ -1,31 +1,56 @@
 [workspace]
-resolver = "2"
 members = [
-  "modules/utxo",
-  "modules/provider-management",
-  "contracts/privacy-pool",
+  "modules/*",
+  "contracts/*",
 ]
+default-members = [
+  "modules/*",
+  "contracts/privacy-channel",
+  "contracts/channel-auth",
+]
+resolver = "2"
+
+
+
+[workspace.package]
+authors = ["Moonlight"]
+edition = "2021"
+license = "Apache-2.0"
+repository = "https://github.com/Moonlight-Protocol/soroban-core"
+version = "0.0.1"
+
+
+[workspace.dependencies.stellar-default-impl-macro]
+git = "https://github.com/OpenZeppelin/stellar-contracts"
+tag = "v0.3.0"
 
 [workspace.dependencies]
-soroban-sdk = "22.0.3"
-soroban-token-sdk = "22.0.3"
-utxo = { path = "modules/utxo" }
-provider-management = { path = "modules/provider-management" }
+soroban-sdk = { git = "https://github.com/AhaLabs/rs-soroban-sdk", rev = "5a99659f1483c926ff87ea45f8823b8c00dc4cbd" }
+admin-sep = { git = "https://github.com/AhaLabs/admin-sep", rev = "bf195f4d67cc96587974212f998680ccf9a61cd7" }
+soroban-token-sdk = { git = "https://github.com/AhaLabs/rs-soroban-sdk", rev = "5a99659f1483c926ff87ea45f8823b8c00dc4cbd" }
+wee_alloc = "0.4"
 
+moonlight-utxo-core = { path = "modules/utxo-core" }
+moonlight-auth = { path = "modules/auth" }
+moonlight-helpers = { path = "modules/helpers" }
+moonlight-primitives = { path = "modules/primitives" }
+
+channel-auth-contract = { path = "contracts/channel-auth" }
+token-contract = { path = "contracts/token" }
 
 [profile.release]
 opt-level = "z"
-overflow-checks = true
-debug = 0
-strip = "symbols"
-debug-assertions = false
-panic = "abort"
-codegen-units = 1
+debug = false
 lto = true
+debug-assertions = false
+codegen-units = 1
+panic = "abort"
+overflow-checks = true
+strip = true
 
 [profile.release-with-logs]
-inherits = "release"
 debug-assertions = true
+inherits = "release"
 
 [profile.test]
 overflow-checks = true
