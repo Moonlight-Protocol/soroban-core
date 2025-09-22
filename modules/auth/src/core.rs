@@ -111,7 +111,7 @@ pub trait UtxoAuthorizable {
                     }
 
                     match signer.clone() {
-                        SignerKey::P256(signer_pk) => {
+                        SignerKey::P256(_signer_pk) => {
                             // Lookup signature by key.
 
                             let (sig_variant, valid_until_ledger) =
@@ -133,6 +133,7 @@ pub trait UtxoAuthorizable {
                         }
                         _ => {
                             //Do nothing as we might have the provider signature along these
+                            continue;
                         }
                     }
                 }

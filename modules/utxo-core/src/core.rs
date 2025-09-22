@@ -1,8 +1,7 @@
-use moonlight_helpers::parser::address_to_ed25519_pk_bytes;
 use moonlight_primitives::{no_duplicate_keys, AuthRequirements, Condition, SignerKey};
 use soroban_sdk::{
-    assert_with_error, contracterror, contracttrait, contracttype, panic_with_error, vec, Address,
-    Bytes, BytesN, Env, IntoVal, Map, Symbol, Vec,
+    assert_with_error, contracterror, contracttrait, contracttype, panic_with_error, vec, Bytes,
+    BytesN, Env, IntoVal, Map, Symbol, Vec,
 };
 
 use soroban_sdk::symbol_short;
