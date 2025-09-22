@@ -198,7 +198,7 @@ impl UTXOOperationBuilder {
     pub fn get_contract_auth_args(&self, e: &Env) -> Vec<Val> {
         let auth_req = self.calculate_auth_requirements(&e);
 
-        let args: Vec<Val> = if auth_req.0.len() == 0 {
+        let args: Vec<Val> = if auth_req.0.is_empty() {
             vec![&e]
         } else {
             vec![

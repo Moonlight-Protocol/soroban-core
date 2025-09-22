@@ -117,7 +117,7 @@ pub trait UtxoHandlerTrait {
             Error::RepeatedCreateUTXO
         );
 
-        let auth_args = if bundle.req.0.len() == 0 {
+        let auth_args = if bundle.req.0.is_empty() {
             vec![&e]
         } else {
             vec![&e, bundle.req.clone().into_val(e)]
