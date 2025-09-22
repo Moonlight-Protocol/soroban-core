@@ -42,7 +42,7 @@ pub fn pre_process_channel_operation(
 ) -> (InternalBundle, i128, i128) {
     assert_with_error!(
         &e,
-        op_has_no_conflicting_conditions(&e, op.clone()),
+        op_has_no_conflicting_conditions(&e, &op),
         Error::BundleHasConflictingConditions
     );
 
@@ -175,7 +175,7 @@ pub fn execute_external_operations(
     }
 }
 
-pub fn op_has_no_conflicting_conditions(e: &Env, op: ChannelOperation) -> bool {
+pub fn op_has_no_conflicting_conditions(e: &Env, op: &ChannelOperation) -> bool {
     let mut verified_conditions: Vec<Condition> = Vec::new(&e);
 
     let mut conditions_to_check: Vec<Condition> = Vec::new(&e);
