@@ -185,7 +185,7 @@ pub fn op_has_no_conflicting_conditions(e: &Env, op: ChannelOperation) -> bool {
 
     for c in conditions_to_check.iter() {
         let cond = c.clone();
-        if !condition_does_not_conflict_with_set(cond.clone(), verified_conditions.clone()) {
+        if !condition_does_not_conflict_with_set(&cond, &verified_conditions) {
             return false;
         }
         verified_conditions.push_back(cond);

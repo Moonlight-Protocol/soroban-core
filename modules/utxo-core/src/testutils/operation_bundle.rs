@@ -66,10 +66,7 @@ impl UTXOOperationBuilder {
             }
 
             assert!(
-                has_no_conflicting_conditions_in_sets(
-                    conditions.clone(),
-                    existing_conditions.clone(),
-                ),
+                has_no_conflicting_conditions_in_sets(&conditions, &existing_conditions,),
                 "Conflicting conditions with existing spend UTXO",
             );
         }
@@ -88,10 +85,7 @@ impl UTXOOperationBuilder {
 
         for (_, existing_conditions) in self.spend.iter() {
             assert!(
-                condition_does_not_conflict_with_set(
-                    condition.clone(),
-                    existing_conditions.clone()
-                ),
+                condition_does_not_conflict_with_set(&condition, &existing_conditions),
                 "Create condition conflicts with existing spend UTXO",
             );
         }

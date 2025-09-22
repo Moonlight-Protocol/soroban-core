@@ -66,10 +66,7 @@ impl ChannelOperationBuilder {
             }
 
             assert!(
-                has_no_conflicting_conditions_in_sets(
-                    conditions.clone(),
-                    existing_conditions.clone()
-                ),
+                has_no_conflicting_conditions_in_sets(&conditions, &existing_conditions),
                 "New deposit conditions conflict with existing deposit conditions"
             );
         }
@@ -85,10 +82,7 @@ impl ChannelOperationBuilder {
             }
 
             assert!(
-                has_no_conflicting_conditions_in_sets(
-                    conditions.clone(),
-                    existing_conditions.clone()
-                ),
+                has_no_conflicting_conditions_in_sets(&conditions, &existing_conditions),
                 "New deposit conditions conflict with existing withdraw conditions"
             );
         }
@@ -108,10 +102,7 @@ impl ChannelOperationBuilder {
             }
 
             assert!(
-                has_no_conflicting_conditions_in_sets(
-                    conditions.clone(),
-                    existing_conditions.clone()
-                ),
+                has_no_conflicting_conditions_in_sets(&conditions, &existing_conditions),
                 "New withdraw conditions conflict with existing withdraw conditions"
             );
         }
@@ -126,10 +117,7 @@ impl ChannelOperationBuilder {
                 }
             }
             assert!(
-                has_no_conflicting_conditions_in_sets(
-                    conditions.clone(),
-                    existing_conditions.clone()
-                ),
+                has_no_conflicting_conditions_in_sets(&conditions, &existing_conditions),
                 "New withdraw conditions conflict with existing deposit conditions"
             );
         }
