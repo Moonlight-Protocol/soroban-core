@@ -204,7 +204,7 @@ impl ChannelOperationBuilder {
 
         // CHANNEL TRANSACT with ARGS: [DEPOSIT_CONDITIONS]
         let root_args: Vec<Val> = if deposit_conditions.len() == 0 {
-            vec![&e, ().into_val(e)]
+            vec![&e]
         } else {
             vec![
                 &e,
