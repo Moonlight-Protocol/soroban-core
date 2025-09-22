@@ -129,12 +129,6 @@ fn test_single_deposit_with_auth() {
 
     deposit_op.add_deposit_signature(john.address.clone(), john_deposit_sub_signature);
 
-    // To this (prints actual value):
-    std::println!(
-        "Auth Entry: {:?}",
-        deposit_op.get_auth_entry_for_deposit(&e, john.address.clone(), nonce, live_until_ledger,),
-    );
-
     channel
         // .mock_all_auths()
         .set_auths(&[
