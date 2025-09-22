@@ -134,7 +134,7 @@ impl ChannelOperationBuilder {
             );
         }
 
-        self.deposit.push_back((address, amount, conditions));
+        self.withdraw.push_back((address, amount, conditions));
     }
 
     pub fn get_operation_bundle(&self) -> ChannelOperation {
