@@ -1,8 +1,7 @@
-use moonlight_helpers::parser::address_to_ed25519_pk_bytes;
 use moonlight_primitives::{no_duplicate_keys, AuthRequirements, Condition, SignerKey};
 use soroban_sdk::{
-    assert_with_error, contracterror, contracttrait, contracttype, panic_with_error, vec, Address,
-    Bytes, BytesN, Env, IntoVal, Map, Symbol, Vec,
+    assert_with_error, contracterror, contracttrait, contracttype, panic_with_error, vec, Bytes,
+    BytesN, Env, IntoVal, Map, Symbol, Vec,
 };
 
 use soroban_sdk::symbol_short;
@@ -104,14 +103,19 @@ pub trait UtxoHandlerTrait {
     ) -> i128 {
         let mut total_available_balance = incoming_amount;
 
-        if !no_duplicate_keys(&e, bundle.spend.iter(), |spend_utxo| spend_utxo.clone()) {
-            panic_with_error!(&e, Error::RepeatedSpendUTXO);
-        }
-        if !no_duplicate_keys(&e, bundle.create.iter(), |(create_utxo, _amt)| {
-            create_utxo.clone()
-        }) {
-            panic_with_error!(&e, Error::RepeatedCreateUTXO);
-        }
+        assert_with_error!(
+            &e,
+            no_duplicate_keys(&e, bundle.spend.iter(), |spend_utxo| spend_utxo.clone()),
+            Error::RepeatedSpendUTXO
+        );
+
+        assert_with_error!(
+            &e,
+            no_duplicate_keys(&e, bundle.create.iter(), |(create_utxo, _amt)| {
+                create_utxo.clone()
+            }),
+            Error::RepeatedCreateUTXO
+        );
 
         Self::auth(&e).require_auth_for_args(vec![&e, bundle.req.clone().into_val(e)]);
 

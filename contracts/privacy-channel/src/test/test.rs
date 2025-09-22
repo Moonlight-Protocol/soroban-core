@@ -5,7 +5,6 @@ use crate::{
     test::channel_operation_builder::ChannelOperationBuilder,
 };
 
-use alloc::borrow::ToOwned;
 use channel_auth_contract::contract::{
     ChannelAuthContract, ChannelAuthContractArgs, ChannelAuthContractClient,
 };

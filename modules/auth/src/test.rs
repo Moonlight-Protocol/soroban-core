@@ -1,7 +1,5 @@
-use core::clone;
-
 use moonlight_helpers::testutils::keys::{Ed25519Account, P256KeyPair};
-use moonlight_primitives::{hash_payload, Condition, Signature, SignerKey};
+use moonlight_primitives::{Condition, Signature, SignerKey};
 use soroban_sdk::{testutils::Ledger, vec, xdr, Env, Error, Map};
 
 use crate::{core::verify_signature, testutils::contract::create_contract};

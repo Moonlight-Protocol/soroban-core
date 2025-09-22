@@ -1,13 +1,14 @@
 use moonlight_primitives::{
-    equal_condition_sequence, no_duplicate_addresses, verify_condition_does_not_conflict_with_set,
+    condition_does_not_conflict_with_set, equal_condition_sequence, no_duplicate_addresses,
     Condition,
 };
 use moonlight_utxo_core::core::{calculate_auth_requirements, InternalBundle};
 use soroban_sdk::{
+    assert_with_error,
     auth::{ContractContext, InvokerContractAuthEntry, SubContractInvocation},
     contracterror, contracttype, panic_with_error,
     token::TokenClient,
-    vec, xdr, Address, BytesN, Env, IntoVal, Symbol, Val, Vec,
+    vec, Address, BytesN, Env, IntoVal, Symbol, Val, Vec,
 };
 
 use crate::{
@@ -23,6 +24,7 @@ pub enum Error {
     RepeatedAccountForWithdraw = 102,
     ConflictingConditionsForAccount = 103,
     AmountOverflow = 104,
+    BundleHasConflictingConditions = 105,
 }
 
 #[derive(Clone)]
@@ -38,6 +40,12 @@ pub fn pre_process_channel_operation(
     e: &Env,
     op: ChannelOperation,
 ) -> (InternalBundle, i128, i128) {
+    assert_with_error!(
+        &e,
+        op_has_no_conflicting_conditions(&e, &op),
+        Error::BundleHasConflictingConditions
+    );
+
     let mut total_deposit: i128 = 0;
     for (_addr, amt, _conds) in op.deposit.iter() {
         total_deposit = match total_deposit.checked_add(amt) {
@@ -54,8 +62,7 @@ pub fn pre_process_channel_operation(
         };
     }
 
-    let merged_deposit_and_withdraws =
-        join_external_operations(&e, op.deposit.clone(), op.withdraw.clone());
+    verify_external_operations(&e, op.deposit.clone(), op.withdraw.clone());
 
     let auth_req = calculate_auth_requirements(e, &op.spend); // &vec![&e]);
 
@@ -87,24 +94,6 @@ pub fn pre_process_channel_operation(
         extract_external_condition_lists(e, condition_lists);
 
     return (utxo_op, total_deposit, total_withdraw);
-}
-
-// Joins deposit and withdraw operations into a single Vec<(Address, Vec<Condition>)>.
-fn join_external_operations(
-    e: &Env,
-    deposit: Vec<(Address, i128, Vec<Condition>)>,
-    withdraw: Vec<(Address, i128, Vec<Condition>)>,
-) -> Vec<(Address, Vec<Condition>)> {
-    verify_external_operations(&e, deposit.clone(), withdraw.clone());
-
-    let mut combined: Vec<(Address, Vec<Condition>)> = Vec::new(&e);
-    for (addr, _, conditions) in deposit {
-        combined.push_back((addr, conditions));
-    }
-    for (addr, _, conditions) in withdraw {
-        combined.push_back((addr, conditions));
-    }
-    combined
 }
 
 fn extract_external_condition_lists(e: &Env, list: Vec<Vec<Condition>>) -> Vec<Condition> {
@@ -184,4 +173,23 @@ pub fn execute_external_operations(
         asset_client.transfer(&e.current_contract_address(), &to, &amount);
         decrease_supply(&e, amount);
     }
+}
+
+pub fn op_has_no_conflicting_conditions(e: &Env, op: &ChannelOperation) -> bool {
+    let mut verified_conditions: Vec<Condition> = Vec::new(&e);
+
+    let mut conditions_to_check: Vec<Condition> = Vec::new(&e);
+    conditions_to_check.extend(op.spend.iter().flat_map(|(_, conds)| conds.clone()));
+    conditions_to_check.extend(op.deposit.iter().flat_map(|(_, _, conds)| conds.clone()));
+    conditions_to_check.extend(op.withdraw.iter().flat_map(|(_, _, conds)| conds.clone()));
+
+    for c in conditions_to_check.iter() {
+        let cond = c.clone();
+        if !condition_does_not_conflict_with_set(&cond, &verified_conditions) {
+            return false;
+        }
+        verified_conditions.push_back(cond);
+    }
+
+    true
 }

@@ -1,4 +1,4 @@
-use soroban_sdk::{Address, Env};
+use soroban_sdk::Env;
 
 use crate::storage::{read_supply, write_supply_unchecked};
 

@@ -223,22 +223,26 @@ pub fn equal_condition_sequence(e: &Env, a: &Vec<Condition>, b: &Vec<Condition>)
     true
 }
 
-pub fn verify_condition_does_not_conflict_with_set(
-    condition: Condition,
-    condition_set: Vec<Condition>,
-) {
+pub fn condition_does_not_conflict_with_set(
+    condition: &Condition,
+    condition_set: &Vec<Condition>,
+) -> bool {
     for cond in condition_set.iter() {
-        if cond.conflicts_with(&condition) {
-            panic!("Conflicting conditions detected");
+        if cond.conflicts_with(condition) {
+            return false;
         }
     }
+    true
 }
 
-pub fn verify_no_conflicting_conditions(
-    conditions_a: Vec<Condition>,
-    conditions_b: Vec<Condition>,
-) {
+pub fn has_no_conflicting_conditions_in_sets(
+    conditions_a: &Vec<Condition>,
+    conditions_b: &Vec<Condition>,
+) -> bool {
     for cond in conditions_a.iter() {
-        verify_condition_does_not_conflict_with_set(cond.clone(), conditions_b.clone());
+        if !condition_does_not_conflict_with_set(&cond, conditions_b) {
+            return false;
+        }
     }
+    true
 }
