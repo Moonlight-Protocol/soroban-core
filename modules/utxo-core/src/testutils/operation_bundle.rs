@@ -197,12 +197,18 @@ impl UTXOOperationBuilder {
 
     pub fn get_contract_auth_args(&self, e: &Env) -> Vec<Val> {
         let auth_req = self.calculate_auth_requirements(&e);
-        let args: Vec<Val> = vec![
-            &e,
-            auth_req
-                .try_into_val(e)
-                .unwrap_or_else(|_| panic!("intoval")),
-        ];
+
+        let args: Vec<Val> = if auth_req.0.len() == 0 {
+            vec![&e]
+        } else {
+            vec![
+                &e,
+                auth_req
+                    .try_into_val(e)
+                    .unwrap_or_else(|_| panic!("intoval")),
+            ]
+        };
+
         args
     }
 

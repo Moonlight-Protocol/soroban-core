@@ -30,3 +30,4 @@ moonlight-utxo-core = { workspace = true, features = ["testutils"] }
 channel-auth-contract = { workspace = true  }
 moonlight-helpers = { workspace = true, features = ["testutils"] }
 token-contract = { workspace = true , features = ["testutils"] }
+

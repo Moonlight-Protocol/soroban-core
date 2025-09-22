@@ -1,4 +1,5 @@
 #![cfg(test)]
+extern crate std;
 
 use crate::{
     contract::{PrivacyChannelContract, PrivacyChannelContractArgs, PrivacyChannelContractClient},
@@ -8,6 +9,7 @@ use crate::{
 use channel_auth_contract::contract::{
     ChannelAuthContract, ChannelAuthContractArgs, ChannelAuthContractClient,
 };
+
 use moonlight_helpers::testutils::{
     keys::P256KeyPair,
     snapshot::{get_env_with_g_accounts, get_snapshot_g_accounts},
@@ -61,6 +63,96 @@ pub fn create_contracts(
         PrivacyChannelContractClient::new(e, &privacy_channel_contract_id);
 
     (privacy_channel_contract, auth_contract, token, admin)
+}
+
+#[test]
+fn test_single_deposit_with_auth() {
+    let e = get_env_with_g_accounts();
+    let (provider_a, john, _, _, _) = get_snapshot_g_accounts(&e);
+
+    let (channel, auth, token, _) = create_contracts(&e);
+
+    assert_eq!(auth.is_provider(&provider_a.address), false);
+    auth.mock_all_auths().add_provider(&provider_a.address);
+    assert_eq!(auth.is_provider(&provider_a.address), true);
+
+    token
+        .mock_all_auths()
+        .mint(&&john.address.clone(), &1000_i128);
+
+    assert_eq!(token.balance(&john.address), 1000_i128);
+
+    let utxo_a = P256KeyPair::generate(&e);
+
+    let nonce = 0;
+
+    let mut deposit_op = ChannelOperationBuilder::generate(
+        &e,
+        channel.address.clone(),
+        auth.address.clone(),
+        token.address.clone(),
+    );
+
+    // no conditions as we cant properly test the G address signing mixed with the mocked address
+    deposit_op.add_deposit(
+        &e,
+        john.address.clone(),
+        500_i128,
+        vec![&e, Condition::Create(utxo_a.public_key.clone(), 500_i128)],
+    );
+
+    deposit_op.add_create(utxo_a.public_key.clone(), 500_i128);
+
+    let live_until_ledger = e.ledger().sequence() + 100;
+
+    let provider_a_signature = provider_a.sign(
+        &e,
+        deposit_op.get_auth_entry_payload_hash_for_bundle(&e, nonce, live_until_ledger),
+    );
+
+    deposit_op.add_provider_signature(
+        &e,
+        provider_a.address.clone(),
+        provider_a_signature,
+        live_until_ledger,
+    );
+
+    let john_deposit_sub_signature = john.sign_for_transaction(
+        &e,
+        deposit_op.get_auth_entry_payload_hash_for_deposit(
+            &e,
+            john.address.clone(),
+            nonce,
+            live_until_ledger,
+        ),
+    );
+
+    deposit_op.add_deposit_signature(john.address.clone(), john_deposit_sub_signature);
+
+    // To this (prints actual value):
+    std::println!(
+        "Auth Entry: {:?}",
+        deposit_op.get_auth_entry_for_deposit(&e, john.address.clone(), nonce, live_until_ledger,),
+    );
+
+    channel
+        // .mock_all_auths()
+        .set_auths(&[
+            deposit_op.get_auth_entry(&e, nonce, live_until_ledger.clone()),
+            deposit_op.get_auth_entry_for_deposit(
+                &e,
+                john.address.clone(),
+                nonce,
+                live_until_ledger,
+            ),
+        ])
+        .transact(&deposit_op.get_operation_bundle());
+
+    assert_eq!(token.balance(&john.address), 500_i128);
+
+    assert_eq!(channel.supply(), 500_i128);
+
+    assert_eq!(channel.utxo_balance(&utxo_a.public_key.clone()), 500_i128);
 }
 
 #[test]
@@ -162,7 +254,7 @@ fn test_auth_module() {
 
     let provider_a_signature = provider_a.sign(
         &e,
-        deposit_op.get_auth_entry_payload_hash_for_bundle(&e, 0, live_until_ledger),
+        deposit_op.get_auth_entry_payload_hash_for_bundle(&e, nonce, live_until_ledger),
     );
 
     deposit_op.add_provider_signature(
