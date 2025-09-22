@@ -1,6 +1,6 @@
 use moonlight_helpers::parser::address_to_ed25519_pk_bytes;
 use moonlight_primitives::{
-    hash_payload, verify_condition_does_not_conflict_with_set, verify_no_conflicting_conditions,
+    condition_does_not_conflict_with_set, has_no_conflicting_conditions_in_sets, hash_payload,
     AuthPayload, AuthRequirements, Condition, Signature, Signatures, SignerKey,
 };
 use soroban_sdk::{
@@ -65,7 +65,13 @@ impl UTXOOperationBuilder {
                 panic!("UTXO already included in spend list");
             }
 
-            verify_no_conflicting_conditions(conditions.clone(), existing_conditions.clone());
+            assert!(
+                has_no_conflicting_conditions_in_sets(
+                    conditions.clone(),
+                    existing_conditions.clone(),
+                ),
+                "Conflicting conditions with existing spend UTXO",
+            );
         }
 
         self.spend.push_back((utxo, conditions));
@@ -81,9 +87,12 @@ impl UTXOOperationBuilder {
         let condition = Condition::Create(utxo.clone(), amount);
 
         for (_, existing_conditions) in self.spend.iter() {
-            verify_condition_does_not_conflict_with_set(
-                condition.clone(),
-                existing_conditions.clone(),
+            assert!(
+                condition_does_not_conflict_with_set(
+                    condition.clone(),
+                    existing_conditions.clone()
+                ),
+                "Create condition conflicts with existing spend UTXO",
             );
         }
 

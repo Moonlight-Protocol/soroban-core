@@ -1,21 +1,17 @@
 use core::ops::{Deref, DerefMut};
 
-use moonlight_helpers::{
-    parser::address_to_ed25519_pk_bytes, testutils::keys::AccountEd25519Signature,
-};
+use moonlight_helpers::testutils::keys::AccountEd25519Signature;
 use moonlight_primitives::{
-    equal_condition_sequence, hash_payload, verify_no_conflicting_conditions, AuthPayload,
-    Condition, Signature, SignerKey,
+    equal_condition_sequence, has_no_conflicting_conditions_in_sets, hash_payload, AuthPayload,
+    Condition,
 };
 use moonlight_utxo_core::testutils::operation_bundle::UTXOOperationBuilder;
 use soroban_sdk::{
     contracttype,
     crypto::Hash,
     vec,
-    xdr::{
-        self, HashIdPreimage, HashIdPreimageSorobanAuthorization, Limits, ToXdr, VecM, WriteXdr,
-    },
-    Address, Bytes, BytesN, Env, IntoVal, Map, TryIntoVal, Val, Vec,
+    xdr::{self, HashIdPreimage, HashIdPreimageSorobanAuthorization, Limits, VecM, WriteXdr},
+    Address, Bytes, Env, IntoVal, Map, TryIntoVal, Val, Vec,
 };
 
 use crate::transact::ChannelOperation;
@@ -69,7 +65,13 @@ impl ChannelOperationBuilder {
                 panic!("Deposit already included for address");
             }
 
-            verify_no_conflicting_conditions(conditions.clone(), existing_conditions.clone());
+            assert!(
+                has_no_conflicting_conditions_in_sets(
+                    conditions.clone(),
+                    existing_conditions.clone()
+                ),
+                "New deposit conditions conflict with existing deposit conditions"
+            );
         }
 
         for (existing_address, _, existing_conditions) in self.withdraw.iter() {
@@ -82,7 +84,13 @@ impl ChannelOperationBuilder {
                 }
             }
 
-            verify_no_conflicting_conditions(conditions.clone(), existing_conditions.clone());
+            assert!(
+                has_no_conflicting_conditions_in_sets(
+                    conditions.clone(),
+                    existing_conditions.clone()
+                ),
+                "New deposit conditions conflict with existing withdraw conditions"
+            );
         }
 
         self.deposit.push_back((address, amount, conditions));
@@ -99,7 +107,13 @@ impl ChannelOperationBuilder {
                 panic!("Withdraw already included for address");
             }
 
-            verify_no_conflicting_conditions(conditions.clone(), existing_conditions.clone());
+            assert!(
+                has_no_conflicting_conditions_in_sets(
+                    conditions.clone(),
+                    existing_conditions.clone()
+                ),
+                "New withdraw conditions conflict with existing withdraw conditions"
+            );
         }
 
         for (existing_address, _, existing_conditions) in self.deposit.iter() {
@@ -111,8 +125,13 @@ impl ChannelOperationBuilder {
                     );
                 }
             }
-
-            verify_no_conflicting_conditions(conditions.clone(), existing_conditions.clone());
+            assert!(
+                has_no_conflicting_conditions_in_sets(
+                    conditions.clone(),
+                    existing_conditions.clone()
+                ),
+                "New withdraw conditions conflict with existing deposit conditions"
+            );
         }
 
         self.deposit.push_back((address, amount, conditions));
