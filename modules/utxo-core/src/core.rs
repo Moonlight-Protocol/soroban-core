@@ -104,14 +104,19 @@ pub trait UtxoHandlerTrait {
     ) -> i128 {
         let mut total_available_balance = incoming_amount;
 
-        if !no_duplicate_keys(&e, bundle.spend.iter(), |spend_utxo| spend_utxo.clone()) {
-            panic_with_error!(&e, Error::RepeatedSpendUTXO);
-        }
-        if !no_duplicate_keys(&e, bundle.create.iter(), |(create_utxo, _amt)| {
-            create_utxo.clone()
-        }) {
-            panic_with_error!(&e, Error::RepeatedCreateUTXO);
-        }
+        assert_with_error!(
+            &e,
+            no_duplicate_keys(&e, bundle.spend.iter(), |spend_utxo| spend_utxo.clone()),
+            Error::RepeatedSpendUTXO
+        );
+
+        assert_with_error!(
+            &e,
+            no_duplicate_keys(&e, bundle.create.iter(), |(create_utxo, _amt)| {
+                create_utxo.clone()
+            }),
+            Error::RepeatedCreateUTXO
+        );
 
         Self::auth(&e).require_auth_for_args(vec![&e, bundle.req.clone().into_val(e)]);
 
