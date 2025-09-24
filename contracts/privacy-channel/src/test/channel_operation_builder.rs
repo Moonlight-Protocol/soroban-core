@@ -203,12 +203,16 @@ impl ChannelOperationBuilder {
             .expect("Depositor address not found in deposit list");
 
         // CHANNEL TRANSACT with ARGS: [DEPOSIT_CONDITIONS]
-        let root_args: Vec<Val> = vec![
-            &e,
-            deposit_conditions
-                .try_into_val(e)
-                .unwrap_or_else(|_| panic!("intoval")),
-        ];
+        let root_args: Vec<Val> = if deposit_conditions.is_empty() {
+            vec![&e]
+        } else {
+            vec![
+                &e,
+                deposit_conditions
+                    .try_into_val(e)
+                    .unwrap_or_else(|_| panic!("intoval")),
+            ]
+        };
 
         // TRANSFER: From, To, Amount
         let sub_args: Vec<Val> = vec![

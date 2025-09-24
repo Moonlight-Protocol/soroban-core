@@ -117,7 +117,13 @@ pub trait UtxoHandlerTrait {
             Error::RepeatedCreateUTXO
         );
 
-        Self::auth(&e).require_auth_for_args(vec![&e, bundle.req.clone().into_val(e)]);
+        let auth_args = if bundle.req.0.is_empty() {
+            vec![&e]
+        } else {
+            vec![&e, bundle.req.clone().into_val(e)]
+        };
+
+        Self::auth(&e).require_auth_for_args(auth_args);
 
         for spend_utxo in bundle.spend.iter() {
             let unspent_balance = Self::spend(&e, spend_utxo.clone());
