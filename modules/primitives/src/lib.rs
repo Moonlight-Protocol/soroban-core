@@ -122,7 +122,7 @@ pub struct AuthPayload {
 ///
 pub fn hash_payload(e: &Env, auth_payload: &AuthPayload) -> Hash<32> {
     let mut b = Bytes::new(&e);
-    b.append(&auth_payload.contract.clone().to_xdr(&e));
+    b.append(&auth_payload.contract.clone().to_string().to_bytes());
 
     let mut b_create = Bytes::new(&e);
     b_create.append(&Bytes::from_slice(&e, b"CREATE"));
@@ -140,15 +140,15 @@ pub fn hash_payload(e: &Env, auth_payload: &AuthPayload) -> Hash<32> {
                 b_create.append(&Bytes::from_slice(&e, &amount.to_le_bytes()));
             }
             Condition::ExtDeposit(addr, amount) => {
-                b_deposit.append(&addr.to_xdr(&e));
+                b_deposit.append(&addr.to_string().to_bytes());
                 b_deposit.append(&Bytes::from_slice(&e, &amount.to_le_bytes()));
             }
             Condition::ExtWithdraw(addr, amount) => {
-                b_withdraw.append(&addr.to_xdr(&e));
+                b_withdraw.append(&addr.to_string().to_bytes());
                 b_withdraw.append(&Bytes::from_slice(&e, &amount.to_le_bytes()));
             }
             Condition::ExtIntegration(adapter, utxos, amount) => {
-                b_integrate.append(&adapter.to_xdr(&e));
+                b_integrate.append(&adapter.to_string().to_bytes());
                 for utxo in utxos.iter() {
                     b_integrate.append(&Bytes::from_slice(&e, utxo.to_array().as_ref()));
                 }
@@ -168,6 +168,55 @@ pub fn hash_payload(e: &Env, auth_payload: &AuthPayload) -> Hash<32> {
 
     e.crypto().sha256(&b)
 }
+
+// pub fn hash_payload(e: &Env, auth_payload: &AuthPayload) -> Hash<32> {
+//     let mut b = Bytes::new(&e);
+//     b.append(&auth_payload.contract.clone().to_xdr(&e));
+
+//     let mut b_create = Bytes::new(&e);
+//     b_create.append(&Bytes::from_slice(&e, b"CREATE"));
+//     let mut b_deposit = Bytes::new(&e);
+//     b_deposit.append(&Bytes::from_slice(&e, b"DEPOSIT"));
+//     let mut b_withdraw = Bytes::new(&e);
+//     b_withdraw.append(&Bytes::from_slice(&e, b"WITHDRAW"));
+//     let mut b_integrate = Bytes::new(&e);
+//     b_integrate.append(&Bytes::from_slice(&e, b"INTEGRATE"));
+
+//     for cond in auth_payload.conditions.iter() {
+//         match cond {
+//             Condition::Create(utxo, amount) => {
+//                 b_create.append(&Bytes::from_slice(&e, utxo.to_array().as_ref()));
+//                 b_create.append(&Bytes::from_slice(&e, &amount.to_le_bytes()));
+//             }
+//             Condition::ExtDeposit(addr, amount) => {
+//                 b_deposit.append(&addr.to_xdr(&e));
+//                 b_deposit.append(&Bytes::from_slice(&e, &amount.to_le_bytes()));
+//             }
+//             Condition::ExtWithdraw(addr, amount) => {
+//                 b_withdraw.append(&addr.to_xdr(&e));
+//                 b_withdraw.append(&Bytes::from_slice(&e, &amount.to_le_bytes()));
+//             }
+//             Condition::ExtIntegration(adapter, utxos, amount) => {
+//                 b_integrate.append(&adapter.to_xdr(&e));
+//                 for utxo in utxos.iter() {
+//                     b_integrate.append(&Bytes::from_slice(&e, utxo.to_array().as_ref()));
+//                 }
+//                 b_integrate.append(&Bytes::from_slice(&e, &amount.to_le_bytes()));
+//             }
+//         }
+//     }
+//     b.append(&b_create);
+//     b.append(&b_deposit);
+//     b.append(&b_withdraw);
+//     b.append(&b_integrate);
+
+//     b.append(&Bytes::from_slice(
+//         &e,
+//         &auth_payload.live_until_ledger.to_le_bytes(),
+//     ));
+
+//     e.crypto().sha256(&b)
+// }
 
 // Returns true if all BytesN<65> keys produced by key_fn are unique.
 pub fn no_duplicate_keys<I, F>(e: &Env, iter: I, mut key_fn: F) -> bool
