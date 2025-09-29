@@ -101,7 +101,6 @@ impl UTXOOperationBuilder {
         for (existing_utxo, conditions) in self.spend.iter() {
             if existing_utxo == utxo {
                 return AuthPayload {
-                    contract: self.channel_contract.clone(),
                     conditions: conditions.clone(),
                     live_until_ledger,
                 };
@@ -117,7 +116,11 @@ impl UTXOOperationBuilder {
         live_until_ledger: u32,
     ) -> Hash<32> {
         let payload = self.get_auth_payload_for_spend(utxo, live_until_ledger);
-        hash_payload(&e, &payload)
+        hash_payload(
+            &e,
+            &payload,
+            &self.channel_contract.clone().to_string().to_bytes(),
+        )
     }
 
     pub fn add_spend_signature(

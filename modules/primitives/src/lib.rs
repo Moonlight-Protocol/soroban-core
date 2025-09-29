@@ -98,7 +98,6 @@ pub enum Signature {
 #[derive(Clone)]
 #[contracttype]
 pub struct AuthPayload {
-    pub contract: Address,
     pub conditions: Vec<Condition>,
     pub live_until_ledger: u32,
 }
@@ -120,18 +119,18 @@ pub struct AuthPayload {
 /// the conditions in the same ordering as they are defined in the original bundle  to ensure
 /// deterministic payloads.
 ///
-pub fn hash_payload(e: &Env, auth_payload: &AuthPayload) -> Hash<32> {
+pub fn hash_payload(e: &Env, auth_payload: &AuthPayload, contract: &Bytes) -> Hash<32> {
     let mut b = Bytes::new(&e);
-    b.append(&auth_payload.contract.clone().to_string().to_bytes());
+    b.append(&contract);
 
     let mut b_create = Bytes::new(&e);
-    b_create.append(&Bytes::from_slice(&e, b"CREATE"));
+    // b_create.append(&Bytes::from_slice(&e, b"CREATE"));
     let mut b_deposit = Bytes::new(&e);
-    b_deposit.append(&Bytes::from_slice(&e, b"DEPOSIT"));
+    // b_deposit.append(&Bytes::from_slice(&e, b"DEPOSIT"));
     let mut b_withdraw = Bytes::new(&e);
-    b_withdraw.append(&Bytes::from_slice(&e, b"WITHDRAW"));
+    // b_withdraw.append(&Bytes::from_slice(&e, b"WITHDRAW"));
     let mut b_integrate = Bytes::new(&e);
-    b_integrate.append(&Bytes::from_slice(&e, b"INTEGRATE"));
+    // b_integrate.append(&Bytes::from_slice(&e, b"INTEGRATE"));
 
     for cond in auth_payload.conditions.iter() {
         match cond {

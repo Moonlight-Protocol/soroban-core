@@ -142,7 +142,6 @@ impl ChannelOperationBuilder {
         for (existing_address, _, conditions) in self.deposit.iter() {
             if existing_address == address {
                 return AuthPayload {
-                    contract: self.utxo_builder.channel_contract.clone(),
                     conditions: conditions.clone(),
                     live_until_ledger,
                 };
@@ -152,7 +151,6 @@ impl ChannelOperationBuilder {
         for (existing_address, _, conditions) in self.withdraw.iter() {
             if existing_address == address {
                 return AuthPayload {
-                    contract: self.utxo_builder.channel_contract.clone(),
                     conditions: conditions.clone(),
                     live_until_ledger,
                 };
@@ -169,7 +167,16 @@ impl ChannelOperationBuilder {
         live_until_ledger: u32,
     ) -> Hash<32> {
         let payload = self.get_auth_payload_for_address(address, live_until_ledger);
-        hash_payload(&e, &payload)
+        hash_payload(
+            &e,
+            &payload,
+            &self
+                .utxo_builder
+                .channel_contract
+                .clone()
+                .to_string()
+                .to_bytes(),
+        )
     }
 
     pub fn add_deposit_signature(

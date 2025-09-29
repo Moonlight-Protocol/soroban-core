@@ -17,7 +17,7 @@ testutils = ["soroban-sdk/testutils", "moonlight-utxo-core/testutils"]
 [dependencies]
 soroban-sdk = { workspace = true }
 admin-sep = { workspace = true}
-moonlight-utxo-core = { workspace = true , features = [] }
+moonlight-utxo-core = { workspace = true , features = [ "no-utxo-events", "no-bundle-events"] }
 moonlight-auth = { workspace = true }
 moonlight-primitives = { workspace = true }
 wee_alloc = {workspace = true}

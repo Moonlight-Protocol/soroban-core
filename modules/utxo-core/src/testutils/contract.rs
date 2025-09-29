@@ -58,7 +58,7 @@ impl UTXOModuleTestContract {
 
     pub fn burn(e: Env, utxos: Vec<BytesN<65>>) {
         for utxo in utxos {
-            Self::spend(&e, utxo);
+            Self::spend(&e, &utxo);
         }
     }
 }
