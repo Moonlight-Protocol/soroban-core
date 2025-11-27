@@ -10,7 +10,6 @@ WASM_PATH = target/wasm32v1-none/release/
 BINDINGS_DIR = ./.bindings
 
 # scripts
-UPLOAD_AND_DEPLOY_SCRIPT = ./src/deploy/upload-and-deploy.ts
 
 CYAN = [36m
 GREEN = [32m
