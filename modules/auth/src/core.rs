@@ -101,7 +101,7 @@ pub trait UtxoAuthorizable {
                 let inner: Map<SignerKey, Vec<Condition>> = reqs.0;
 
                 let caller_contract = cc.contract;
-
+                let caller_contract_bytes: Bytes = caller_contract.clone().to_string().to_bytes();
                 for signer in inner.keys().iter() {
                     let conds: Vec<Condition> = inner.get(signer.clone()).unwrap(); // or handle Option
                                                                                     // Use the signer key (signer) and its conditions (conds)
@@ -122,12 +122,12 @@ pub trait UtxoAuthorizable {
                             }
 
                             let auth_payload = AuthPayload {
-                                contract: caller_contract.clone(),
                                 conditions: conds,
                                 live_until_ledger: valid_until_ledger,
                             };
 
-                            let msg = hash_payload(&e, &auth_payload);
+                            let msg =
+                                hash_payload(&e, &auth_payload, &caller_contract_bytes.clone());
 
                             verify_signature(&e, &signer, &sig_variant, &msg)?;
                         }

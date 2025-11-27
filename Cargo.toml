@@ -34,6 +34,7 @@ moonlight-utxo-core = { path = "modules/utxo-core" }
 moonlight-auth = { path = "modules/auth" }
 moonlight-helpers = { path = "modules/helpers" }
 moonlight-primitives = { path = "modules/primitives" }
+moonlight-storage = { path = "modules/storage" }
 
 channel-auth-contract = { path = "contracts/channel-auth" }
 token-contract = { path = "contracts/token" }

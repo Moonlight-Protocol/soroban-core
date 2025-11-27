@@ -1,4 +1,8 @@
+#[cfg(not(feature = "no-bundle-events"))]
 use soroban_sdk::{contractevent, BytesN, Symbol, Vec};
+
+#[cfg(not(feature = "no-utxo-events"))]
+use soroban_sdk::{contractevent, BytesN, Symbol};
 
 #[cfg(not(feature = "no-bundle-events"))]
 #[contractevent(data_format = "vec")]

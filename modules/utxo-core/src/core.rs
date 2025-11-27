@@ -4,10 +4,16 @@ use soroban_sdk::{
     BytesN, Env, IntoVal, Map, Symbol, Vec,
 };
 
+use moonlight_storage::{Store, UtxoStore};
+
+#[cfg(feature = "storage-drawer")]
+use moonlight_storage::{DrawerCache, DrawerStore};
+
 use soroban_sdk::symbol_short;
 
 #[cfg(not(feature = "no-bundle-events"))]
 use crate::events::BundleEvent;
+#[cfg(not(feature = "no-utxo-events"))]
 use crate::events::UtxoEvent;
 
 #[derive(Clone)]
@@ -73,22 +79,14 @@ pub trait UtxoHandlerTrait {
     /// If the UTXO is unspent, the stored balance is returned.
     /// If the UTXO is spent, 0 is returned.
     /// If no record exists for the UTXO (represented by –1), it is considered free to be created.
-    fn utxo_balance(e: Env, utxo: BytesN<65>) -> i128 {
-        match e
-            .storage()
-            .persistent()
-            .get::<_, UtxoState>(&UTXOCoreDataKey::UTXO(Self::hash_utxo_key(&e, &utxo)))
-        {
-            Some(UtxoState::Unspent(amount)) => amount,
-            Some(UtxoState::Spent) => 0,
-            None => -1,
-        }
+    fn utxo_balance(e: &Env, utxo: BytesN<65>) -> i128 {
+        Store::utxo_balance(&e, &utxo)
     }
-    fn utxo_balances(e: Env, utxos: Vec<BytesN<65>>) -> Vec<i128> {
+    fn utxo_balances(e: &Env, utxos: Vec<BytesN<65>>) -> Vec<i128> {
         let mut balances: Vec<i128> = vec![&e];
 
         for u in utxos {
-            balances.push_back(Self::utxo_balance(e.clone(), u));
+            balances.push_back(Self::utxo_balance(&e, u));
         }
 
         balances
@@ -125,15 +123,67 @@ pub trait UtxoHandlerTrait {
 
         Self::auth(&e).require_auth_for_args(auth_args);
 
-        for spend_utxo in bundle.spend.iter() {
-            let unspent_balance = Self::spend(&e, spend_utxo.clone());
-            total_available_balance += unspent_balance;
+        #[cfg(feature = "storage-drawer")]
+        {
+            let mut cache = DrawerCache::new(e);
+
+            for spend_utxo in bundle.spend.iter() {
+                // Inline the verification and spend logic
+                let amount = match DrawerStore::utxo_balance_cached(e, &mut cache, &spend_utxo) {
+                    a if a > 0 => a,
+                    0 => panic_with_error!(e, Error::UTXOAlreadySpent),
+                    _ => panic_with_error!(e, Error::UTXODoesntExist),
+                };
+
+                DrawerStore::spend_cached(&e, &mut cache, &spend_utxo);
+                total_available_balance += amount;
+
+                #[cfg(not(feature = "no-utxo-events"))]
+                UtxoEvent {
+                    name: symbol_short!("utxo"),
+                    utxo: spend_utxo.clone(),
+                    action: symbol_short!("spend"),
+                    amount,
+                }
+                .publish(&e);
+            }
+
+            for (create_utxo, amount) in bundle.create.iter() {
+                // Inline the verification and create logic
+                if DrawerStore::utxo_balance_cached(e, &mut cache, &create_utxo) != -1 {
+                    panic_with_error!(e, Error::UTXOAlreadyExists);
+                }
+
+                assert_with_error!(&e, amount > 0, Error::InvalidCreateAmount);
+
+                DrawerStore::create_cached(&e, &mut cache, &create_utxo, amount);
+                total_available_balance -= amount;
+
+                #[cfg(not(feature = "no-utxo-events"))]
+                UtxoEvent {
+                    name: symbol_short!("utxo"),
+                    utxo: create_utxo.clone(),
+                    action: symbol_short!("create"),
+                    amount,
+                }
+                .publish(&e);
+            }
+
+            cache.commit(e);
         }
 
-        for (create_utxo, amount) in bundle.create.iter() {
-            Self::create(&e, amount, create_utxo.clone());
+        // Use regular storage when drawer is not enabled
+        #[cfg(not(feature = "storage-drawer"))]
+        {
+            for spend_utxo in bundle.spend.iter() {
+                let unspent_balance = Self::spend(&e, spend_utxo.clone());
+                total_available_balance += unspent_balance;
+            }
 
-            total_available_balance -= amount;
+            for (create_utxo, amount) in bundle.create.iter() {
+                Self::create(&e, amount, create_utxo.clone());
+                total_available_balance -= amount;
+            }
         }
 
         assert_with_error!(
@@ -159,8 +209,6 @@ pub trait UtxoHandlerTrait {
 
     /// Creates a new UTXO with the specified balance after verifying it does not already exist.
     ///
-    /// Creates a new UTXO associated with the given balance. The UTXO must not already exist.
-    ///
     ///### Panics
     /// - Panics if the UTXO already exists.
     #[internal]
@@ -169,7 +217,7 @@ pub trait UtxoHandlerTrait {
 
         assert_with_error!(&e, amount > 0, Error::InvalidCreateAmount);
 
-        Self::unchecked_create(e, amount, utxo);
+        Self::unchecked_create(e, amount, &utxo);
     }
 
     /// Spends the specified UTXO after verifying its state.
@@ -182,18 +230,17 @@ pub trait UtxoHandlerTrait {
     /// - Panics if signature verification fails.
     /// - Panics if the UTXO is already spent or does not exist.
     #[internal]
-    fn spend(e: &Env, utxo: BytesN<65>) -> i128 {
+    fn spend(e: &Env, utxo: &BytesN<65>) -> i128 {
         let amount = Self::verify_utxo_unspent(&e, utxo.clone());
         Self::unchecked_spend(&e, utxo.clone(), amount);
         amount
     }
 
     #[internal]
-    fn unchecked_create(e: &Env, amount: i128, utxo: BytesN<65>) {
-        let key = UTXOCoreDataKey::UTXO(Self::hash_utxo_key(&e, &utxo));
-        e.storage()
-            .persistent()
-            .set(&key, &UtxoState::Unspent(amount));
+    fn unchecked_create(e: &Env, amount: i128, utxo: &BytesN<65>) {
+        Store::create(&e, &utxo, amount);
+
+        #[cfg(not(feature = "no-utxo-events"))]
         UtxoEvent {
             name: symbol_short!("utxo"),
             utxo,
@@ -205,8 +252,9 @@ pub trait UtxoHandlerTrait {
 
     #[internal]
     fn unchecked_spend(e: &Env, utxo: BytesN<65>, _amount: i128) {
-        let key = UTXOCoreDataKey::UTXO(Self::hash_utxo_key(&e, &utxo));
-        e.storage().persistent().set(&key, &UtxoState::Spent);
+        Store::spend(&e, &utxo);
+
+        #[cfg(not(feature = "no-utxo-events"))]
         UtxoEvent {
             name: symbol_short!("utxo"),
             utxo,
@@ -228,23 +276,17 @@ pub trait UtxoHandlerTrait {
 
     #[internal]
     fn verify_utxo_not_exists(e: &Env, utxo: BytesN<65>) {
-        let key = UTXOCoreDataKey::UTXO(Self::hash_utxo_key(&e, &utxo));
-
-        assert_with_error!(
-            &e,
-            e.storage().persistent().get::<_, UtxoState>(&key).is_none(),
-            Error::UTXOAlreadyExists
-        );
+        if Store::utxo_balance(e, &utxo) != -1 {
+            panic_with_error!(e, Error::UTXOAlreadyExists);
+        }
     }
 
     #[internal]
     fn verify_utxo_unspent(e: &Env, utxo: BytesN<65>) -> i128 {
-        let key = UTXOCoreDataKey::UTXO(Self::hash_utxo_key(&e, &utxo));
-
-        match e.storage().persistent().get::<_, UtxoState>(&key) {
-            Some(UtxoState::Unspent(amount)) => amount,
-            Some(UtxoState::Spent) => panic_with_error!(&e, Error::UTXOAlreadySpent),
-            None => panic_with_error!(&e, Error::UTXODoesntExist),
+        match Store::utxo_balance(e, &utxo) {
+            a if a > 0 => a,
+            0 => panic_with_error!(e, Error::UTXOAlreadySpent),
+            _ => panic_with_error!(e, Error::UTXODoesntExist),
         }
     }
 }
@@ -260,12 +302,6 @@ pub fn calculate_auth_requirements(
     for (spend_utxo, conditions) in p256.iter() {
         map_req.set(SignerKey::P256(spend_utxo.clone()), conditions.clone());
     }
-
-    // for (native_address, conditions) in ed25519.iter() {
-    //     let pk_bytes = address_to_ed25519_pk_bytes(&e, &native_address).into();
-    //     // .unwrap_or_else(|_| panic!("address to pk"));
-    //     map_req.set(SignerKey::Ed25519(pk_bytes), conditions.clone());
-    // }
 
     AuthRequirements(map_req)
 }
