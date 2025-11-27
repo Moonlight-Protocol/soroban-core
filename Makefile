@@ -1,4 +1,4 @@
-# #configuration parameters
+# configuration parameters
 
 CHANNEL = privacy_channel
 AUTH = channel_auth_contract
