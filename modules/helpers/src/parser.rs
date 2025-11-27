@@ -1,5 +1,4 @@
 use soroban_sdk::{Address, BytesN, Env};
-
 use stellar_strkey::{ed25519::PublicKey as StrEd25519, Strkey};
 
 pub fn address_from_ed25519_pk_bytes(e: &Env, provider_pk32: &BytesN<32>) -> Address {
