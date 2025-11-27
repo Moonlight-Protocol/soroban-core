@@ -81,7 +81,7 @@ pub struct Signatures(pub Map<SignerKey, (Signature, u32)>); // Signature with a
 pub enum SignerKey {
     P256(BytesN<65>),    // SEC1 uncompressed
     Ed25519(BytesN<32>), // Ed25519 public key
-    // Secp256k1(BytesN<65>), // Secp256k1 public key
+    // Secp256k1(BytesN<65>), // Secp256k1 public key (not implemented)
     // BLS12_381(BytesN<48>), // BLS12-381 public key (not implemented)
     Provider(BytesN<32>), // Ed25519 public key of the provider account (Only native keys for now)
 }
@@ -106,10 +106,10 @@ pub struct AuthPayload {
 ///
 /// The payload is built by concatenating in order:
 ///  - The contract address (32 bytes),
-///  - The literal "CREATE" (6 bytes), followed by all `create` conditions,
-///  - The literal "DEPOSIT" (8 bytes), followed by all `withdraw` conditions,
-///  - The literal "WITHDRAW" (8 bytes), followed by all `withdraw` conditions,
-///  - The literal "INTEGRATE" (9 bytes), followed by all `integration` conditions.
+///  - followed by all `create` conditions,
+///  - followed by all `deposit` conditions,
+///  - followed by all `withdraw` conditions,
+///  - followed by all `integration` conditions.
 ///
 /// The resulting byte stream is hashed using SHA-256 to produce a digest that is
 /// used for verifying the signatures of the bundle.
@@ -124,13 +124,9 @@ pub fn hash_payload(e: &Env, auth_payload: &AuthPayload, contract: &Bytes) -> Ha
     b.append(&contract);
 
     let mut b_create = Bytes::new(&e);
-    // b_create.append(&Bytes::from_slice(&e, b"CREATE"));
     let mut b_deposit = Bytes::new(&e);
-    // b_deposit.append(&Bytes::from_slice(&e, b"DEPOSIT"));
     let mut b_withdraw = Bytes::new(&e);
-    // b_withdraw.append(&Bytes::from_slice(&e, b"WITHDRAW"));
     let mut b_integrate = Bytes::new(&e);
-    // b_integrate.append(&Bytes::from_slice(&e, b"INTEGRATE"));
 
     for cond in auth_payload.conditions.iter() {
         match cond {
@@ -167,55 +163,6 @@ pub fn hash_payload(e: &Env, auth_payload: &AuthPayload, contract: &Bytes) -> Ha
 
     e.crypto().sha256(&b)
 }
-
-// pub fn hash_payload(e: &Env, auth_payload: &AuthPayload) -> Hash<32> {
-//     let mut b = Bytes::new(&e);
-//     b.append(&auth_payload.contract.clone().to_xdr(&e));
-
-//     let mut b_create = Bytes::new(&e);
-//     b_create.append(&Bytes::from_slice(&e, b"CREATE"));
-//     let mut b_deposit = Bytes::new(&e);
-//     b_deposit.append(&Bytes::from_slice(&e, b"DEPOSIT"));
-//     let mut b_withdraw = Bytes::new(&e);
-//     b_withdraw.append(&Bytes::from_slice(&e, b"WITHDRAW"));
-//     let mut b_integrate = Bytes::new(&e);
-//     b_integrate.append(&Bytes::from_slice(&e, b"INTEGRATE"));
-
-//     for cond in auth_payload.conditions.iter() {
-//         match cond {
-//             Condition::Create(utxo, amount) => {
-//                 b_create.append(&Bytes::from_slice(&e, utxo.to_array().as_ref()));
-//                 b_create.append(&Bytes::from_slice(&e, &amount.to_le_bytes()));
-//             }
-//             Condition::ExtDeposit(addr, amount) => {
-//                 b_deposit.append(&addr.to_xdr(&e));
-//                 b_deposit.append(&Bytes::from_slice(&e, &amount.to_le_bytes()));
-//             }
-//             Condition::ExtWithdraw(addr, amount) => {
-//                 b_withdraw.append(&addr.to_xdr(&e));
-//                 b_withdraw.append(&Bytes::from_slice(&e, &amount.to_le_bytes()));
-//             }
-//             Condition::ExtIntegration(adapter, utxos, amount) => {
-//                 b_integrate.append(&adapter.to_xdr(&e));
-//                 for utxo in utxos.iter() {
-//                     b_integrate.append(&Bytes::from_slice(&e, utxo.to_array().as_ref()));
-//                 }
-//                 b_integrate.append(&Bytes::from_slice(&e, &amount.to_le_bytes()));
-//             }
-//         }
-//     }
-//     b.append(&b_create);
-//     b.append(&b_deposit);
-//     b.append(&b_withdraw);
-//     b.append(&b_integrate);
-
-//     b.append(&Bytes::from_slice(
-//         &e,
-//         &auth_payload.live_until_ledger.to_le_bytes(),
-//     ));
-
-//     e.crypto().sha256(&b)
-// }
 
 // Returns true if all BytesN<65> keys produced by key_fn are unique.
 pub fn no_duplicate_keys<I, F>(e: &Env, iter: I, mut key_fn: F) -> bool

@@ -80,15 +80,6 @@ pub trait UtxoHandlerTrait {
     /// If the UTXO is spent, 0 is returned.
     /// If no record exists for the UTXO (represented by –1), it is considered free to be created.
     fn utxo_balance(e: &Env, utxo: BytesN<65>) -> i128 {
-        // match e
-        //     .storage()
-        //     .persistent()
-        //     .get::<_, UtxoState>(&UTXOCoreDataKey::UTXO(Self::hash_utxo_key(&e, &utxo)))
-        // {
-        //     Some(UtxoState::Unspent(amount)) => amount,
-        //     Some(UtxoState::Spent) => 0,
-        //     None => -1,
-        // }
         Store::utxo_balance(&e, &utxo)
     }
     fn utxo_balances(e: &Env, utxos: Vec<BytesN<65>>) -> Vec<i128> {
@@ -195,17 +186,6 @@ pub trait UtxoHandlerTrait {
             }
         }
 
-        // for spend_utxo in bundle.spend.iter() {
-        //     let unspent_balance = Self::spend(&e, spend_utxo.clone());
-        //     total_available_balance += unspent_balance;
-        // }
-
-        // for (create_utxo, amount) in bundle.create.iter() {
-        //     Self::create(&e, amount, create_utxo.clone());
-
-        //     total_available_balance -= amount;
-        // }
-
         assert_with_error!(
             &e,
             total_available_balance == expected_outgoing,
@@ -228,8 +208,6 @@ pub trait UtxoHandlerTrait {
     }
 
     /// Creates a new UTXO with the specified balance after verifying it does not already exist.
-    ///
-    /// Creates a new UTXO associated with the given balance. The UTXO must not already exist.
     ///
     ///### Panics
     /// - Panics if the UTXO already exists.
@@ -260,11 +238,6 @@ pub trait UtxoHandlerTrait {
 
     #[internal]
     fn unchecked_create(e: &Env, amount: i128, utxo: &BytesN<65>) {
-        // let key = UTXOCoreDataKey::UTXO(Self::hash_utxo_key(&e, &utxo));
-        // e.storage()
-        //     .persistent()
-        //     .set(&key, &UtxoState::Unspent(amount));
-
         Store::create(&e, &utxo, amount);
 
         #[cfg(not(feature = "no-utxo-events"))]
@@ -279,9 +252,6 @@ pub trait UtxoHandlerTrait {
 
     #[internal]
     fn unchecked_spend(e: &Env, utxo: BytesN<65>, _amount: i128) {
-        // let key = UTXOCoreDataKey::UTXO(Self::hash_utxo_key(&e, &utxo));
-        // e.storage().persistent().set(&key, &UtxoState::Spent);
-
         Store::spend(&e, &utxo);
 
         #[cfg(not(feature = "no-utxo-events"))]
@@ -306,14 +276,6 @@ pub trait UtxoHandlerTrait {
 
     #[internal]
     fn verify_utxo_not_exists(e: &Env, utxo: BytesN<65>) {
-        // let key = UTXOCoreDataKey::UTXO(Self::hash_utxo_key(&e, &utxo));
-
-        // assert_with_error!(
-        //     &e,
-        //     e.storage().persistent().get::<_, UtxoState>(&key).is_none(),
-        //     Error::UTXOAlreadyExists
-        // );
-
         if Store::utxo_balance(e, &utxo) != -1 {
             panic_with_error!(e, Error::UTXOAlreadyExists);
         }
@@ -321,14 +283,6 @@ pub trait UtxoHandlerTrait {
 
     #[internal]
     fn verify_utxo_unspent(e: &Env, utxo: BytesN<65>) -> i128 {
-        // let key = UTXOCoreDataKey::UTXO(Self::hash_utxo_key(&e, &utxo));
-
-        // match e.storage().persistent().get::<_, UtxoState>(&key) {
-        //     Some(UtxoState::Unspent(amount)) => amount,
-        //     Some(UtxoState::Spent) => panic_with_error!(&e, Error::UTXOAlreadySpent),
-        //     None => panic_with_error!(&e, Error::UTXODoesntExist),
-        // }
-
         match Store::utxo_balance(e, &utxo) {
             a if a > 0 => a,
             0 => panic_with_error!(e, Error::UTXOAlreadySpent),
@@ -348,12 +302,6 @@ pub fn calculate_auth_requirements(
     for (spend_utxo, conditions) in p256.iter() {
         map_req.set(SignerKey::P256(spend_utxo.clone()), conditions.clone());
     }
-
-    // for (native_address, conditions) in ed25519.iter() {
-    //     let pk_bytes = address_to_ed25519_pk_bytes(&e, &native_address).into();
-    //     // .unwrap_or_else(|_| panic!("address to pk"));
-    //     map_req.set(SignerKey::Ed25519(pk_bytes), conditions.clone());
-    // }
 
     AuthRequirements(map_req)
 }
