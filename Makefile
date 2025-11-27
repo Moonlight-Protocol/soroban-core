@@ -18,10 +18,10 @@ BLUE = [34m
 RESET = [0m
 
 help h: 
-	@echo  make build      build the contract wasm
-	@echo make deploy      deploy the contract to $(NETWORK)
-	@echo make bindings    generate TypeScript bindings
-	@echo make clean       remove build artifacts
+	@echo "$(CYAN)make build$(RESET)      $(YELLOW)build the contract wasm$(RESET)"
+	@echo "$(CYAN)make deploy$(RESET)     $(YELLOW)deploy the contract to $(NETWORK)$(RESET)"
+	@echo "$(CYAN)make bindings$(RESET)   $(YELLOW)generate TypeScript bindings$(RESET)"
+	@echo "$(CYAN)make clean$(RESET)      $(YELLOW)remove build artifacts$(RESET)"
 
 build:
 	stellar contract build
