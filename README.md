@@ -77,5 +77,5 @@ Two UTXO storage backends (compile-time selectable):
 
 ```bash
 make build    # Build contracts
-make test     # Run tests (via cargo)
+cargo test    # Run tests
 ```
