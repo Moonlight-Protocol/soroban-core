@@ -73,13 +73,6 @@ impl TestToken {
         write_administrator(&e, &new_admin);
         SetAdmin { admin, new_admin }.publish(&e);
     }
-
-    // #[cfg(test)]
-    // pub fn get_allowance(e: Env, from: Address, spender: Address) -> Option<AllowanceValue> {
-    //     let key = DataKey::Allowance(AllowanceDataKey { from, spender });
-    //     let allowance = e.storage().temporary().get::<_, AllowanceValue>(&key);
-    //     allowance
-    // }
 }
 
 #[contractimpl]

@@ -295,7 +295,6 @@ pub trait UtxoHandlerTrait {
 pub fn calculate_auth_requirements(
     e: &Env,
     p256: &Vec<(BytesN<65>, Vec<Condition>)>,
-    // ed25519: &Vec<(Address, Vec<Condition>)>,
 ) -> AuthRequirements {
     let mut map_req: Map<SignerKey, Vec<Condition>> = Map::new(&e);
 

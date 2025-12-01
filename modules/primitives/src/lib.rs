@@ -79,10 +79,8 @@ pub struct Signatures(pub Map<SignerKey, (Signature, u32)>); // Signature with a
 #[contracttype]
 #[derive(Clone, Debug)]
 pub enum SignerKey {
-    P256(BytesN<65>),    // SEC1 uncompressed
-    Ed25519(BytesN<32>), // Ed25519 public key
-    // Secp256k1(BytesN<65>), // Secp256k1 public key (not implemented)
-    // BLS12_381(BytesN<48>), // BLS12-381 public key (not implemented)
+    P256(BytesN<65>),     // SEC1 uncompressed
+    Ed25519(BytesN<32>),  // Ed25519 public key
     Provider(BytesN<32>), // Ed25519 public key of the provider account (Only native keys for now)
 }
 

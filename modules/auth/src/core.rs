@@ -68,13 +68,6 @@ pub fn verify_signature(
         (SignerKey::Ed25519(pk), Signature::Ed25519(sig)) => {
             verify_ed25519_signature(e, pk, sig, payload_hash)
         }
-
-        // (SignerKey::Secp256k1(_pk), Signature::Secp256k1(_sig)) => {
-        //     Err(Error::UnsupportedSignatureFormat)
-        // }
-        // (SignerKey::BLS12_381(_pk), Signature::BLS12_381(_sig)) => {
-        //     Err(Error::UnsupportedSignatureFormat)
-        // }
         _ => Err(Error::InvalidSignatureFormat),
     }
 }
