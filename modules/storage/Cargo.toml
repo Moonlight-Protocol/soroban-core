@@ -4,7 +4,6 @@ description = "Storage Module"
 version = "1.0.0"
 edition = "2021"
 
-
 [lib]
 crate-type = ["rlib"]
 doctest = false
@@ -12,8 +11,6 @@ doctest = false
 [features]
 storage-simple = []
 storage-drawer = []
-
-
 
 [dependencies]
 soroban-sdk = { git = "https://github.com/AhaLabs/rs-soroban-sdk", rev = "5a99659f1483c926ff87ea45f8823b8c00dc4cbd" }
