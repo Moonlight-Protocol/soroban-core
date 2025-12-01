@@ -20,10 +20,6 @@ pub fn read_asset(e: &Env) -> Address {
         .unwrap()
 }
 
-// pub fn is_contract_initialized(e: &Env) -> bool {
-//     e.storage().instance().has(&PrivacyChannelDataKey::Asset)
-// }
-
 pub fn write_supply_unchecked(e: &Env, supply: i128) {
     e.storage()
         .instance()

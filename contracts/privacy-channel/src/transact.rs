@@ -78,35 +78,8 @@ pub fn pre_process_channel_operation(
         req: auth_req,
     };
 
-    // let mut condition_lists: Vec<Vec<Condition>> = Vec::new(&e);
-    // for (_, conds) in op.spend.iter() {
-    //     condition_lists.push_back(conds.clone());
-    // }
-    // for (_, _, conds) in op.deposit.iter() {
-    //     condition_lists.push_back(conds.clone());
-    // }
-    // for (_, _, conds) in op.withdraw.iter() {
-    //     condition_lists.push_back(conds.clone());
-    // }
-
-    // // TODO: REVIEW CONDITIONS AGAINST RESULTS
-    // let _external_condition_list: Vec<Condition> =
-    //     extract_external_condition_lists(e, condition_lists);
-
     return (utxo_op, total_deposit, total_withdraw);
 }
-
-// fn extract_external_condition_lists(e: &Env, list: Vec<Vec<Condition>>) -> Vec<Condition> {
-//     let mut merged = Vec::new(&e);
-//     for conditions in list {
-//         for cond in conditions {
-//             if !merged.contains(&cond) {
-//                 merged.push_back(cond);
-//             }
-//         }
-//     }
-//     merged
-// }
 
 fn verify_external_operations(
     e: &Env,
