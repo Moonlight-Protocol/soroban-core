@@ -1,0 +1,21 @@
+[package]
+name = "token-contract"
+description = "Test Token"
+version = "0.0.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+doctest = false
+
+[features]
+testutils = ["soroban-sdk/testutils"]
+
+
+[dependencies]
+soroban-sdk = { workspace = true }
+soroban-token-sdk = { workspace = true }
+
+
+[dev-dependencies]
+soroban-sdk = { workspace = true , features = ["testutils"] }

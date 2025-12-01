@@ -1,0 +1,33 @@
+[package]
+name = "privacy-channel"
+description = "Privacy Channel"
+version = "0.0.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib"]
+doctest = false
+
+
+[features]
+testutils = ["soroban-sdk/testutils", "moonlight-utxo-core/testutils"]
+
+
+
+[dependencies]
+soroban-sdk = { workspace = true }
+admin-sep = { workspace = true}
+moonlight-utxo-core = { workspace = true , features = [ "no-utxo-events", "no-bundle-events"] }
+moonlight-auth = { workspace = true }
+moonlight-primitives = { workspace = true }
+wee_alloc = {workspace = true}
+
+
+
+[dev-dependencies]
+soroban-sdk = { workspace = true , features = ["testutils"] }
+moonlight-utxo-core = { workspace = true, features = ["testutils"] }
+channel-auth-contract = { workspace = true  }
+moonlight-helpers = { workspace = true, features = ["testutils"] }
+token-contract = { workspace = true , features = ["testutils"] }
+

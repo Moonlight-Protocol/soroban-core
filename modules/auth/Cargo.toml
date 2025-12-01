@@ -1,0 +1,25 @@
+[package]
+name = "moonlight-auth"
+description = "Auth Module"
+version = "1.0.0"
+edition = "2021"
+
+[features]
+testutils = ["soroban-sdk/testutils", "moonlight-helpers/testutils", "moonlight-utxo-core/testutils", "stellar-strkey", "admin-sep"]
+
+[lib]
+crate-type = ["rlib"]
+doctest = false
+
+[dependencies]
+soroban-sdk = { workspace = true }
+stellar-strkey = { version = "0.0.13", optional = true}
+admin-sep  = { workspace = true, optional = true}
+moonlight-helpers = { workspace = true}
+moonlight-primitives = { workspace = true}
+
+[dev-dependencies]
+soroban-sdk = { workspace = true , features = ["testutils"] }
+moonlight-helpers = { workspace = true , features = ["testutils"] }
+moonlight-utxo-core = { workspace = true, features = ["testutils"] }
+moonlight-auth = { workspace = true, features = ["testutils"] }
