@@ -10,8 +10,6 @@ default-members = [
 ]
 resolver = "2"
 
-
-
 [workspace.package]
 authors = ["Moonlight"]
 edition = "2021"
