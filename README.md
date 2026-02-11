@@ -1,6 +1,36 @@
-# Moonlight Protocol / soroban-core
+<p align=center>
+  <img alt=Moonlight src=https://moonlightprotocol.io/moonlight.png width=300px height=300px />
+</p>
 
-Core contracts and modules for the Moonlight Protocol on Soroban.
+<h1 align=center>Core Contracts</h1>
+
+Moonlight: the missing privacy layer, for any blockchain, built on Stellar.
+
+This repository contains the core smart contracts and modules for the Moonlight Protocol on Soroban.
+
+```mermaid
+erDiagram
+    "Quorum Auth (smart contract)" ||--|{ "Privacy Channel (smart contract)" : "has many"
+    "Privacy Channel (smart contract)" ||--|{ "Privacy Provider (off-chain service; bank, wallet, etc)" : "has many"
+    End-user }|--|{ "Privacy Provider (off-chain service; bank, wallet, etc)" : "chooses, per tx"
+    "Quorum Auth (smart contract)" {
+        Address admin "Moonlight Security Council multi-sig"
+        Address[] provider "Set of Privacy Provider public keys in this quorum"
+    }
+    "Privacy Channel (smart contract)" {
+        Address admin "Moonlight Security Council multi-sig"
+        Address asset "e.g. XLM"
+        i256 supply
+    }
+    "Privacy Provider (off-chain service; bank, wallet, etc)" {
+        string provider_sk "Stellar account registered with Privacy Channel"
+        string opex_sk "Operating expense account that pays fees & creates UTXOs"
+        string url "Endpoint hosting Provider Platform API"
+    }
+```
+
+This repository contains the smart contracts. A reference implementation of the Privacy Provider API can be found at [Moonlight-Protocol/provider-platform](https://github.com/Moonlight-Protocol/provider-platform/tree/dev).
+
 
 ## Structure
 
