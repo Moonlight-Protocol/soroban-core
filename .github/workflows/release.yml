@@ -45,3 +45,11 @@ jobs:
         with:
           files: artifacts/*.wasm
           generate_release_notes: true
+
+      - name: Trigger E2E tests
+        uses: peter-evans/repository-dispatch@v3
+        with:
+          token: ${{ secrets.E2E_TRIGGER_TOKEN }}
+          repository: ${{ github.repository_owner }}/local-dev
+          event-type: module-release
+          client-payload: '{"module": "soroban-core", "version": "${{ github.ref_name }}"}'
