@@ -1,0 +1,55 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32v1-none
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ~/.cargo/bin
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Install Stellar CLI
+        run: cargo install --locked stellar-cli --features opt
+
+      - name: Build contracts
+        run: stellar contract build
+
+      - name: Prepare artifacts
+        run: |
+          mkdir -p artifacts
+          cp target/wasm32v1-none/release/channel_auth_contract.wasm artifacts/
+          cp target/wasm32v1-none/release/privacy_channel.wasm artifacts/
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/*.wasm
+          generate_release_notes: true
+
+      - name: Trigger E2E tests
+        uses: peter-evans/repository-dispatch@v3
+        with:
+          token: ${{ secrets.E2E_TRIGGER_TOKEN }}
+          repository: ${{ github.repository_owner }}/local-dev
+          event-type: module-release
+          client-payload: '{"module": "soroban-core", "version": "${{ github.ref_name }}"}'
