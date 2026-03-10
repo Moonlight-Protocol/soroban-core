@@ -1,0 +1,54 @@
+name: PR
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32v1-none
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ~/.cargo/bin
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y pkg-config libdbus-1-dev libudev-dev
+
+      - name: Install Stellar CLI
+        run: cargo install --locked stellar-cli
+
+      - name: Build contracts
+        run: stellar contract build
+
+      - name: Prepare artifacts
+        run: |
+          mkdir -p artifacts
+          cp target/wasm32v1-none/release/channel_auth_contract.wasm artifacts/
+          cp target/wasm32v1-none/release/privacy_channel.wasm artifacts/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: contract-wasms
+          path: artifacts/*.wasm
+
+  e2e:
+    needs: build
+    uses: Moonlight-Protocol/local-dev/.github/workflows/e2e-reusable.yml@main
+    with:
+      contracts_artifact: "contract-wasms"
+    secrets:
+      E2E_TRIGGER_TOKEN: ${{ secrets.E2E_TRIGGER_TOKEN }}
