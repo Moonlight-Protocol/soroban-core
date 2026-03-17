@@ -12,7 +12,7 @@ use moonlight_utxo_core::testutils::{
     contract::create_contract as create_utxo_contract, operation_bundle::UTXOOperationBuilder,
 };
 
-pub fn create_contract(e: &Env) -> (ChannelAuthContractClient, Address) {
+pub fn create_contract(e: &Env) -> (ChannelAuthContractClient<'_>, Address) {
     let admin = Address::generate(&e);
     let contract_id = e.register(
         ChannelAuthContract,
