@@ -4,10 +4,28 @@ use moonlight_auth::core::{Error as AuthError, ProviderAuthorizable, UtxoAuthori
 use moonlight_primitives::Signatures;
 use soroban_sdk::{
     auth::{Context, CustomAccountInterface},
-    contract, contractimpl,
+    contract, contractevent, contractimpl,
     crypto::Hash,
     Address, Env, Vec,
 };
+
+#[contractevent(data_format = "single-value")]
+pub struct ContractInitialized {
+    #[topic]
+    admin: Address,
+}
+
+#[contractevent(data_format = "single-value")]
+pub struct ProviderAdded {
+    #[topic]
+    provider: Address,
+}
+
+#[contractevent(data_format = "single-value")]
+pub struct ProviderRemoved {
+    #[topic]
+    provider: Address,
+}
 
 #[contract]
 pub struct ChannelAuthContract;
@@ -25,6 +43,10 @@ impl UtxoAuthorizable for ChannelAuthContract {}
 impl ChannelAuthContract {
     pub fn __constructor(env: &Env, admin: &Address) {
         Self::set_admin(env, admin);
+        ContractInitialized {
+            admin: admin.clone(),
+        }
+        .publish(env);
     }
 }
 
@@ -35,12 +57,16 @@ impl ProviderAuthorizable for ChannelAuthContract {}
 impl ChannelAuthContract {
     pub fn add_provider(e: &Env, provider: Address) {
         Self::require_admin(e);
+        let addr = provider.clone();
         Self::register_provider(e, provider);
+        ProviderAdded { provider: addr }.publish(e);
     }
 
     pub fn remove_provider(e: &Env, provider: Address) {
         Self::require_admin(e);
+        let addr = provider.clone();
         Self::deregister_provider(e, provider);
+        ProviderRemoved { provider: addr }.publish(e);
     }
 }
 
