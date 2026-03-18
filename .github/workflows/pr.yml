@@ -52,3 +52,11 @@ jobs:
       contracts_artifact: "contract-wasms"
     secrets:
       E2E_TRIGGER_TOKEN: ${{ secrets.E2E_TRIGGER_TOKEN }}
+
+  lifecycle:
+    needs: build
+    uses: Moonlight-Protocol/local-dev/.github/workflows/lifecycle-reusable.yml@main
+    with:
+      contracts_artifact: "contract-wasms"
+    secrets:
+      E2E_TRIGGER_TOKEN: ${{ secrets.E2E_TRIGGER_TOKEN }}
