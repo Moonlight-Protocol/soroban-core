@@ -1,4 +1,4 @@
-use ed25519_dalek::{Keypair as NativeKeypair, Signer as NativeSigner};
+use ed25519_dalek::{Signer as NativeSigner, SigningKey as NativeSigningKey};
 use p256::{
     ecdsa::{
         signature::hazmat::PrehashSigner, Signature as P256Signature, SigningKey as P256SigningKey,
@@ -21,51 +21,41 @@ pub struct AccountEd25519Signature {
 
 pub struct Ed25519Account {
     pub public_key: BytesN<32>,
-    pub keypair: NativeKeypair,
+    pub signing_key: NativeSigningKey,
     pub address: Address,
 }
 
 impl Ed25519Account {
-    pub fn from_keys(e: &Env, public: &[u8; 32], secret: &[u8; 32]) -> Ed25519Account {
-        let public =
-            ed25519_dalek::PublicKey::from_bytes(public).expect("32 bytes, valid ed25519 pk");
-        let secret =
-            ed25519_dalek::SecretKey::from_bytes(secret).expect("64 bytes, within curve order");
-
-        let keypair = NativeKeypair {
-            secret,
-            public: public.try_into().expect("32 bytes, valid ed25519 pk"),
-        };
-
-        Self::from_keypair(e, keypair)
+    pub fn from_keys(e: &Env, _public: &[u8; 32], secret: &[u8; 32]) -> Ed25519Account {
+        let signing_key = NativeSigningKey::from_bytes(secret);
+        Self::from_signing_key(e, signing_key)
     }
 
     pub fn generate(e: &Env) -> Ed25519Account {
-        let mut csprng = OsRng {};
-
-        let keypair = NativeKeypair::generate(&mut csprng);
-
-        Self::from_keypair(e, keypair)
+        let mut csprng = OsRng;
+        let signing_key = NativeSigningKey::generate(&mut csprng);
+        Self::from_signing_key(e, signing_key)
     }
 
-    pub fn from_keypair(e: &Env, keypair: NativeKeypair) -> Ed25519Account {
+    pub fn from_signing_key(e: &Env, signing_key: NativeSigningKey) -> Ed25519Account {
+        let verifying_key = signing_key.verifying_key();
         let public_key_str =
-            Strkey::PublicKeyEd25519(ed25519::PublicKey(keypair.public.to_bytes()));
+            Strkey::PublicKeyEd25519(ed25519::PublicKey(verifying_key.to_bytes()));
 
         let address_bytes = Bytes::from_slice(&e, public_key_str.to_string().as_bytes());
         let address = Address::from_string_bytes(&address_bytes);
 
-        let public_key = BytesN::<32>::from_array(&e, &keypair.public.to_bytes());
+        let public_key = BytesN::<32>::from_array(&e, &verifying_key.to_bytes());
 
         Ed25519Account {
             public_key,
-            keypair,
+            signing_key,
             address,
         }
     }
 
     pub fn sign(&self, e: &Env, msg: Hash<32>) -> BytesN<64> {
-        let signed_payload = self.keypair.sign(msg.to_array().as_slice()).to_bytes();
+        let signed_payload = self.signing_key.sign(msg.to_array().as_slice()).to_bytes();
 
         BytesN::from_array(&e, &signed_payload)
     }
@@ -74,7 +64,7 @@ impl Ed25519Account {
         let raw_signature = self.sign(e, msg);
 
         AccountEd25519Signature {
-            public_key: BytesN::<32>::try_from_val(e, &self.keypair.public.to_bytes()).unwrap(),
+            public_key: BytesN::<32>::try_from_val(e, &self.signing_key.verifying_key().to_bytes()).unwrap(),
             signature: BytesN::<64>::try_from_val(e, &raw_signature).unwrap(),
         }
     }
