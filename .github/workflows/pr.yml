@@ -29,7 +29,7 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y pkg-config libdbus-1-dev libudev-dev
 
       - name: Install Stellar CLI
-        run: cargo install --locked stellar-cli
+        run: cargo install --locked --force stellar-cli
 
       - name: Build contracts
         run: stellar contract build
@@ -48,6 +48,14 @@ jobs:
   e2e:
     needs: build
     uses: Moonlight-Protocol/local-dev/.github/workflows/e2e-reusable.yml@main
+    with:
+      contracts_artifact: "contract-wasms"
+    secrets:
+      E2E_TRIGGER_TOKEN: ${{ secrets.E2E_TRIGGER_TOKEN }}
+
+  lifecycle:
+    needs: build
+    uses: Moonlight-Protocol/local-dev/.github/workflows/lifecycle-reusable.yml@main
     with:
       contracts_artifact: "contract-wasms"
     secrets:
