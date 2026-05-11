@@ -67,7 +67,7 @@ Source of truth: `contracts/channel-auth/src/contract.rs`.
 | `upgrade(wasm_hash)` | admin | `wasm_hash: BytesN<32>` | — | From `admin-sep::Upgradable`. Replaces contract WASM. |
 | `__check_auth(payload, signatures, contexts)` | Soroban host | `payload: Hash<32>`, `signatures: Signatures`, `contexts: Vec<Context>` | `Result<(), Error>` | Auth entry point invoked by Soroban when this contract is named as an authorization principal. |
 
-The `Administratable` and `Upgradable` traits are pulled from the AhaLabs fork of `admin-sep` (workspace dep, rev `bf195f4`). They provide standard admin-gated patterns and require admin auth at the entry point.
+The `Administratable` and `Upgradable` traits are pulled from the theahaco fork of `admin-sep` (workspace dep, rev `bf195f4`). They provide standard admin-gated patterns and require admin auth at the entry point.
 
 ### 2.3 Persistent state (instance storage)
 
@@ -382,8 +382,8 @@ Auditors may reasonably assume the following are part of the audit; they are not
 - **The browser-wallet, council-console, provider-console, network-dashboard**: front-end applications. Out of scope.
 - **The local-dev** orchestration repo: Docker Compose harness for E2E testing. Provides regression evidence (see `tests.md`) but its own code is not in audit scope.
 - **The `contracts/token/` test token**: a workspace-internal token used only in `privacy-channel` integration tests. Not deployed.
-- **The `admin-sep` crate** (`AhaLabs/admin-sep`): pulled in via git, rev `bf195f4d67cc96587974212f998680ccf9a61cd7`. Provides `Administratable` and `Upgradable` traits. Auditors should treat its behavior as part of the trusted base; if a deeper audit of `admin-sep` is desired, that is a separate scope.
-- **The Soroban SDK fork** (`AhaLabs/rs-soroban-sdk`, rev `5a99659f1483c926ff87ea45f8823b8c00dc4cbd`): the workspace pins a specific revision of an Aha-maintained fork rather than `stellar/rs-soroban-sdk`. Where this fork diverges from upstream is itself worth review, but the SDK code is not in this audit scope. Auditors should be aware of the fork pin and may want to ask for the diff against upstream.
+- **The `admin-sep` crate** (`theahaco/admin-sep`): pulled in via git, rev `bf195f4d67cc96587974212f998680ccf9a61cd7`. Provides `Administratable` and `Upgradable` traits. Auditors should treat its behavior as part of the trusted base; if a deeper audit of `admin-sep` is desired, that is a separate scope.
+- **The Soroban SDK fork** (`theahaco/rs-soroban-sdk`, rev `5a99659f1483c926ff87ea45f8823b8c00dc4cbd`): the workspace pins a specific revision of an Aha-maintained fork rather than `stellar/rs-soroban-sdk`. Where this fork diverges from upstream is itself worth review, but the SDK code is not in this audit scope. Auditors should be aware of the fork pin and may want to ask for the diff against upstream.
 - **Stellar Asset Contract** behavior: the channel trusts its configured asset SAC to enforce its own transfer semantics. Custom non-SAC assets are not a tested path.
 
 ---
@@ -394,8 +394,8 @@ Captured here so readers do not need to grep the workspace.
 
 - **Rust edition:** 2021 (workspace).
 - **WASM target:** `wasm32v1-none` (Soroban-supported target; `release.yml` builds against this).
-- **Soroban SDK:** git pin `https://github.com/AhaLabs/rs-soroban-sdk` rev `5a99659f1483c926ff87ea45f8823b8c00dc4cbd`.
-- **`admin-sep`:** git pin `https://github.com/AhaLabs/admin-sep` rev `bf195f4d67cc96587974212f998680ccf9a61cd7`.
+- **Soroban SDK:** git pin `https://github.com/theahaco/rs-soroban-sdk` rev `5a99659f1483c926ff87ea45f8823b8c00dc4cbd`.
+- **`admin-sep`:** git pin `https://github.com/theahaco/admin-sep` rev `bf195f4d67cc96587974212f998680ccf9a61cd7`.
 - **`stellar-default-impl-macro`:** git pin `https://github.com/OpenZeppelin/stellar-contracts` tag `v0.3.0`.
 - **`wee_alloc`:** workspace dep version 0.4 (used as `#[global_allocator]` for `wasm32` builds).
 - **Build command (CI):** `stellar contract build` (latest `stellar-cli`, locked install).
