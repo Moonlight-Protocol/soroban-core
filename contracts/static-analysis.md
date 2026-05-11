@@ -50,7 +50,7 @@ warning: 3 allowed warnings found
 
 **Remediation plan:** **Out of scope for this PR; accept-and-track.**
 
-The dependency arrives through the Soroban SDK pin (`AhaLabs/rs-soroban-sdk`, rev `5a99659f…`). Replacing or upgrading `derivative` would require either an upstream upgrade in the Soroban SDK or a fork. The advisory is informational; the crate has no known security vulnerability — the maintainer simply stopped accepting changes. We will track upstream SDK updates and pick up a fix whenever the Soroban SDK does. No on-chain risk to the contracts in the meantime.
+The dependency arrives through the Soroban SDK pin (`theahaco/rs-soroban-sdk`, rev `5a99659f…`). Replacing or upgrading `derivative` would require either an upstream upgrade in the Soroban SDK or a fork. The advisory is informational; the crate has no known security vulnerability — the maintainer simply stopped accepting changes. We will track upstream SDK updates and pick up a fix whenever the Soroban SDK does. No on-chain risk to the contracts in the meantime.
 
 #### F-AUDIT-2 — `paste 1.0.15` (unmaintained)
 
@@ -169,7 +169,7 @@ fn verify_ed25519_signature(...) -> Result<(), Error> {
 }
 ```
 
-Both wrappers always return `Ok(())`. They depend on the underlying Soroban host primitives panicking on a failed verification. This is the documented behavior of `secp256r1_verify` and `ed25519_verify` in the Soroban SDK at the pinned revision (`5a99659f…` of `AhaLabs/rs-soroban-sdk`).
+Both wrappers always return `Ok(())`. They depend on the underlying Soroban host primitives panicking on a failed verification. This is the documented behavior of `secp256r1_verify` and `ed25519_verify` in the Soroban SDK at the pinned revision (`5a99659f…` of `theahaco/rs-soroban-sdk`).
 
 **Implication:** if the upstream SDK ever changes these primitives to return a `Result` rather than panic, the wrappers as written would silently accept invalid signatures. This is not a current vulnerability but is a non-obvious coupling worth documenting and worth re-validating against any future SDK upgrade.
 
