@@ -19,11 +19,11 @@ crate-type = ["rlib"]
 doctest = false
 
 [dependencies]
-soroban-sdk = { git = "https://github.com/AhaLabs/rs-soroban-sdk", rev = "5a99659f1483c926ff87ea45f8823b8c00dc4cbd" }
+soroban-sdk = { git = "https://github.com/theahaco/rs-soroban-sdk", rev = "5a99659f1483c926ff87ea45f8823b8c00dc4cbd" }
 moonlight-helpers = { workspace = true }
 moonlight-primitives = { workspace = true }
 moonlight-storage = { workspace = true }
 
 [dev-dependencies]
-soroban-sdk = { git = "https://github.com/AhaLabs/rs-soroban-sdk", rev = "5a99659f1483c926ff87ea45f8823b8c00dc4cbd", features = ["testutils"] }
+soroban-sdk = { git = "https://github.com/theahaco/rs-soroban-sdk", rev = "5a99659f1483c926ff87ea45f8823b8c00dc4cbd", features = ["testutils"] }
 moonlight-helpers = { workspace = true , features = ["testutils"] }

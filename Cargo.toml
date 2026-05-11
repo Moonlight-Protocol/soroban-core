@@ -23,9 +23,9 @@ git = "https://github.com/OpenZeppelin/stellar-contracts"
 tag = "v0.3.0"
 
 [workspace.dependencies]
-soroban-sdk = { git = "https://github.com/AhaLabs/rs-soroban-sdk", rev = "5a99659f1483c926ff87ea45f8823b8c00dc4cbd" }
-admin-sep = { git = "https://github.com/AhaLabs/admin-sep", rev = "bf195f4d67cc96587974212f998680ccf9a61cd7" }
-soroban-token-sdk = { git = "https://github.com/AhaLabs/rs-soroban-sdk", rev = "5a99659f1483c926ff87ea45f8823b8c00dc4cbd" }
+soroban-sdk = { git = "https://github.com/theahaco/rs-soroban-sdk", rev = "5a99659f1483c926ff87ea45f8823b8c00dc4cbd" }
+admin-sep = { git = "https://github.com/theahaco/admin-sep", rev = "bf195f4d67cc96587974212f998680ccf9a61cd7" }
+soroban-token-sdk = { git = "https://github.com/theahaco/rs-soroban-sdk", rev = "5a99659f1483c926ff87ea45f8823b8c00dc4cbd" }
 wee_alloc = "0.4"
 
 moonlight-utxo-core = { path = "modules/utxo-core" }
@@ -54,3 +54,5 @@ inherits = "release"
 [profile.test]
 overflow-checks = true
 
+[patch."https://github.com/ahalabs/rs-soroban-sdk"]
+soroban-sdk = { git = "https://github.com/theahaco/rs-soroban-sdk", rev = "5a99659f1483c926ff87ea45f8823b8c00dc4cbd" }
