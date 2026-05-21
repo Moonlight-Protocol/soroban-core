@@ -20,6 +20,8 @@ fn keeps_auth_errors_in_their_reserved_range() {
         Error::UnexpectedContext.code(),
         Error::SignatureExpired.code(),
         Error::ProviderThresholdNotMet.code(),
+        Error::ProviderAlreadyRegistered.code(),
+        Error::ProviderNotRegistered.code(),
     ] {
         assert!((1_000..=1_099).contains(&code));
     }
@@ -50,6 +52,7 @@ fn keeps_channel_errors_in_their_reserved_range() {
         Error::ConflictingConditionsForAccount.code(),
         Error::AmountOverflow.code(),
         Error::BundleHasConflictingConditions.code(),
+        Error::AmountUnderflow.code(),
     ] {
         assert!((3_000..=3_099).contains(&code));
     }

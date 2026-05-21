@@ -219,18 +219,17 @@ Acceptable for the current architecture (channels are bound to a single Channel 
 
 ### 4.4 `panic!` vs `panic_with_error!` inconsistency
 
-`contracts/privacy-channel/src/treasury.rs`:
+`contracts/privacy-channel/src/treasury.rs` previously used string panics for
+internal supply overflow / underflow. That has been normalized to central
+`moonlight-errors` variants via `panic_with_error!`:
 
 ```rust
-None => panic!("Overflow occurred while increasing supply"),
-None => panic!("Underflow occurred while decreasing supply"),
+None => panic_with_error!(e, Error::AmountOverflow),
+None => panic_with_error!(e, Error::AmountUnderflow),
 ```
 
-Other revert paths in the codebase use `panic_with_error!(env, Error::SomeVariant)` which surfaces a structured contract-error code to the host. The two `panic!` calls in `treasury.rs` produce a string panic instead, which loses the structured-error mapping.
-
-**Implication:** if `transact` triggers an internal supply overflow / underflow, the resulting transaction failure is harder to programmatically diagnose from the client side. The path is still rejected; only the diagnosability is degraded.
-
-**Remediation plan:** **Track for follow-up.** Add a `treasury::Error` enum and convert these panics to `panic_with_error!`. Out of scope for this PR.
+**Remediation status:** **Fixed.** Treasury failures now surface structured
+contract-error codes instead of string panic messages.
 
 ### 4.5 Production `unwrap()` sites
 

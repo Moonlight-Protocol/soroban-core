@@ -1,3 +1,4 @@
+use moonlight_errors::Error;
 use moonlight_primitives::{
     condition_does_not_conflict_with_set, equal_condition_sequence, no_duplicate_addresses,
     Condition,
@@ -6,7 +7,7 @@ use moonlight_utxo_core::core::{calculate_auth_requirements, InternalBundle};
 use soroban_sdk::{
     assert_with_error,
     auth::{ContractContext, InvokerContractAuthEntry, SubContractInvocation},
-    contracterror, contracttype, panic_with_error,
+    contracttype, panic_with_error,
     token::TokenClient,
     vec, Address, BytesN, Env, IntoVal, Symbol, Val, Vec,
 };
@@ -15,17 +16,6 @@ use crate::{
     storage::read_asset,
     treasury::{decrease_supply, increase_supply},
 };
-
-#[contracterror]
-#[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
-#[repr(u32)]
-pub enum Error {
-    RepeatedAccountForDeposit = 101,
-    RepeatedAccountForWithdraw = 102,
-    ConflictingConditionsForAccount = 103,
-    AmountOverflow = 104,
-    BundleHasConflictingConditions = 105,
-}
 
 #[derive(Clone)]
 #[contracttype]

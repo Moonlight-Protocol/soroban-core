@@ -20,6 +20,7 @@ stellar-access = { workspace = true }
 stellar-contract-utils = { workspace = true }
 moonlight-utxo-core = { workspace = true , features = [ "no-utxo-events", "no-bundle-events"] }
 moonlight-auth = { workspace = true }
+moonlight-errors = { workspace = true }
 moonlight-primitives = { workspace = true }
 
 

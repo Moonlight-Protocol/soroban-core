@@ -1,4 +1,5 @@
-use moonlight_auth::core::{Error as AuthError, ProviderAuthorizable, UtxoAuthorizable};
+use moonlight_auth::core::{ProviderAuthorizable, UtxoAuthorizable};
+use moonlight_errors::Error as MoonlightError;
 
 use moonlight_primitives::Signatures;
 use soroban_sdk::{
@@ -86,7 +87,7 @@ impl ChannelAuthContract {
 
 #[contractimpl]
 impl CustomAccountInterface for ChannelAuthContract {
-    type Error = AuthError;
+    type Error = MoonlightError;
     type Signature = Signatures;
 
     fn __check_auth(
@@ -94,7 +95,7 @@ impl CustomAccountInterface for ChannelAuthContract {
         payload: Hash<32>,      // used for provider auth
         signatures: Signatures, // provided by tx submitter in Authorization entry
         contexts: Vec<Context>, // require_auth_for_args
-    ) -> Result<(), AuthError> {
+    ) -> Result<(), MoonlightError> {
         Self::require_provider(&e, payload, signatures.clone())?;
         Self::handle_utxo_auth(&e, signatures.clone(), contexts)
     }

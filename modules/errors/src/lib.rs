@@ -31,6 +31,8 @@ pub enum MoonlightError {
     UnexpectedContext = 1_009,
     SignatureExpired = 1_010,
     ProviderThresholdNotMet = 1_011,
+    ProviderAlreadyRegistered = 1_012,
+    ProviderNotRegistered = 1_013,
 
     // UTXO Module errors: 2000-2099.
     UtxoAlreadyExists = 2_000,
@@ -49,6 +51,7 @@ pub enum MoonlightError {
     ConflictingConditionsForAccount = 3_002,
     AmountOverflow = 3_003,
     BundleHasConflictingConditions = 3_004,
+    AmountUnderflow = 3_005,
 
     // Helper errors: 4000-4099.
     NotEd25519AccountAddress = 4_000,

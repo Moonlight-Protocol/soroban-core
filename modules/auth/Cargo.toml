@@ -13,6 +13,7 @@ doctest = false
 
 [dependencies]
 soroban-sdk = { workspace = true }
+moonlight-errors = { workspace = true }
 moonlight-helpers = { workspace = true}
 moonlight-primitives = { workspace = true}
 
