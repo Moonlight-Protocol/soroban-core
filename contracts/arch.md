@@ -62,18 +62,19 @@ Source of truth: `contracts/channel-auth/src/contract.rs`.
 | `add_provider(provider)` | admin | `provider: Address` | — | Registers a provider. Emits `ProviderAdded`. Panics if already registered. |
 | `remove_provider(provider)` | admin | `provider: Address` | — | Deregisters a provider. Emits `ProviderRemoved`. Panics if not registered. |
 | `is_provider(provider)` | anyone | `provider: Address` | `bool` | Read-only membership query. |
-| `set_admin(new_admin)` | admin | `new_admin: Address` | — | From `admin-sep::Administratable`. Transfers admin role. |
-| `admin()` | anyone | — | `Address` | From `admin-sep::Administratable`. Read current admin. |
-| `upgrade(wasm_hash)` | admin | `wasm_hash: BytesN<32>` | — | From `admin-sep::Upgradable`. Replaces contract WASM. |
+| `set_admin(new_admin)` | admin | `new_admin: Address` | — | Starts a two-step OpenZeppelin Ownable admin transfer. The proposed admin must later call `accept_admin()`. |
+| `accept_admin()` | pending admin | — | — | Completes a pending OpenZeppelin Ownable admin transfer. |
+| `admin()` | anyone | — | `Address` | Reads the current OpenZeppelin Ownable owner. |
+| `upgrade(wasm_hash)` | admin | `wasm_hash: BytesN<32>` | — | Uses OpenZeppelin's upgradeable utility to replace contract WASM after owner auth. |
 | `__check_auth(payload, signatures, contexts)` | Soroban host | `payload: Hash<32>`, `signatures: Signatures`, `contexts: Vec<Context>` | `Result<(), Error>` | Auth entry point invoked by Soroban when this contract is named as an authorization principal. |
 
-The `Administratable` and `Upgradable` traits are pulled from the theahaco fork of `admin-sep` (workspace dep, rev `bf195f4`). They provide standard admin-gated patterns and require admin auth at the entry point.
+Admin and upgrade control use OpenZeppelin's `stellar-access` Ownable module and `stellar-contract-utils` upgradeable module. The public function names remain close to the previous `admin-sep` surface, but admin transfer is now explicitly two-step: `set_admin` proposes the next admin and `accept_admin` finalizes it.
 
 ### 2.3 Persistent state (instance storage)
 
 Keys (all under `e.storage().instance()`):
 
-- `Admin` — `Address`. Set in constructor; mutated by `set_admin`. (Encoded by admin-sep, not by this contract directly.)
+- OpenZeppelin Ownable state — current owner and optional pending owner. Set in the constructor; `set_admin` creates or replaces a pending transfer and `accept_admin` commits it.
 - `ProviderDataKey::AuthorizedProvider(addr)` — `()`. One entry per registered provider. Membership is checked via `.get(...).is_some()`.
 
 Storage is **instance** (lives with the contract, has the contract's TTL) — not persistent. This means provider set lookups are cheap (single instance read) but the provider set must fit in a single instance entry's encoded size.
@@ -86,7 +87,7 @@ There is no nonce, no per-account replay state, and no rate-limiting state in Ch
 - `provider_added` — `{ provider: Address }`.
 - `provider_removed` — `{ provider: Address }`.
 
-There is **no event emitted on `set_admin` or `upgrade`** by this contract directly. Whatever auditing trail exists for those actions comes from the underlying `admin-sep` traits and the Soroban transaction record.
+There is **no custom Moonlight event emitted on `set_admin` or `upgrade`** by this contract directly. OpenZeppelin Ownable emits ownership-transfer events for admin changes, and the Stellar transaction record remains the source of truth for upgrades.
 
 ### 2.5 Auth flow detail
 
@@ -158,12 +159,12 @@ Source of truth: `contracts/privacy-channel/src/contract.rs`.
 | `supply()` | anyone | — | `i128` | Returns current channel supply. |
 | `transact(op)` | anyone (with valid auth) | `op: ChannelOperation` | — | Unified bundle-processing entry point. |
 | `auth()` | anyone | — | `Address` | From `UtxoHandlerTrait`. Returns Channel Auth contract address. |
-| `set_auth(new_auth)` | host invocations only | `new_auth: Address` | — | From `UtxoHandlerTrait`. Marked `#[internal]`; not directly invokable by external callers. |
 | `utxo_balance(utxo)` | anyone | `utxo: BytesN<65>` | `i128` | Reads UTXO state. Returns positive amount if unspent, `0` if spent, `-1` if no record exists. |
 | `utxo_balances(utxos)` | anyone | `utxos: Vec<BytesN<65>>` | `Vec<i128>` | Batch wrapper around `utxo_balance`. |
-| `set_admin(new_admin)` | admin | `new_admin: Address` | — | From `admin-sep::Administratable`. |
-| `admin()` | anyone | — | `Address` | From `admin-sep::Administratable`. |
-| `upgrade(wasm_hash)` | admin | `wasm_hash: BytesN<32>` | — | From `admin-sep::Upgradable`. |
+| `set_admin(new_admin)` | admin | `new_admin: Address` | — | Starts a two-step OpenZeppelin Ownable admin transfer. |
+| `accept_admin()` | pending admin | — | — | Completes a pending OpenZeppelin Ownable admin transfer. |
+| `admin()` | anyone | — | `Address` | Reads the current OpenZeppelin Ownable owner. |
+| `upgrade(wasm_hash)` | admin | `wasm_hash: BytesN<32>` | — | Uses OpenZeppelin's upgradeable utility to replace contract WASM after owner auth. |
 
 `ChannelOperation` is defined in `contracts/privacy-channel/src/transact.rs`:
 
@@ -195,8 +196,8 @@ The four operation types in the README — Create, Spend, ExtDeposit, ExtWithdra
 
 - `PrivacyChannelDataKey::Asset` — `Address`. Written exactly once in `__constructor` via `write_asset_unchecked` and never touched again. There is no `set_asset` function.
 - `PrivacyChannelDataKey::Supply` — `i128`. Mutated by `increase_supply` / `decrease_supply` (in `treasury.rs`) on `ExtDeposit` / `ExtWithdraw`.
-- `STORAGE_KEY_UTXO_AUTH` (symbol `"UTXO_AUTH"`) — `Address`. Written in `__constructor` via `set_auth`. There is no exposed external mutator.
-- `Admin` — `Address`, encoded by admin-sep.
+- `STORAGE_KEY_UTXO_AUTH` (symbol `"UTXO_AUTH"`) — `Address`. Written in `__constructor` via the internal `UtxoHandlerTrait::set_auth` helper. There is no exposed external mutator.
+- OpenZeppelin Ownable state — current owner and optional pending owner.
 
 **Persistent storage** (per-UTXO, lives independently of contract instance TTL):
 
@@ -275,7 +276,7 @@ The contracts are intended to uphold each of the following invariants. Where the
 
 ### 4.1 Channel Auth invariants
 
-- **CA-1 (admin gating).** Provider mutations (`add_provider`, `remove_provider`), admin transfer (`set_admin`), and contract upgrade (`upgrade`) require admin auth. *Enforced by `Self::require_admin(e)` at the top of each path and the `admin-sep` traits.*
+- **CA-1 (admin gating).** Provider mutations (`add_provider`, `remove_provider`), admin transfer (`set_admin`), and contract upgrade (`upgrade`) require current owner auth. *Enforced by OpenZeppelin Ownable's `enforce_owner_auth` or `transfer_ownership`; `accept_admin` requires pending-owner auth through OpenZeppelin's role-transfer flow.*
 - **CA-2 (provider threshold).** No `__check_auth` succeeds unless at least one signature in `signatures` is `(SignerKey::Provider(...), Signature::Ed25519(...))` from a currently registered provider, valid against the Soroban auth-entry payload, with an unexpired `valid_until_ledger`. *Enforced by `require_provider`.*
 - **CA-3 (no expired sigs).** `__check_auth` rejects any signature whose `valid_until_ledger < current_ledger_sequence`. *Enforced in both `require_provider` and `handle_utxo_auth`.*
 - **CA-4 (P256 coverage).** For every P256 signer present in the per-context `AuthRequirements` map, there must be a corresponding valid P256 signature in `signatures` over `hash_payload(conditions, live_until_ledger, contract_address_bytes)`. Missing entries error `MissingSignature`. *Enforced in `handle_utxo_auth`.*
@@ -283,12 +284,12 @@ The contracts are intended to uphold each of the following invariants. Where the
 - **CA-6 (signature/key match).** Each verified signer/signature pair must have matching curve types: P256 signer ↔ P256 signature, Provider/Ed25519 signer ↔ Ed25519 signature. Mismatches error `InvalidSignatureFormat`. *Enforced by `verify_signature` in `modules/auth/src/core.rs`.*
 - **CA-7 (event coverage for governance).** Every change to the provider set emits the corresponding event (`ProviderAdded` / `ProviderRemoved`). *Enforced in `add_provider` / `remove_provider`.*
 
-Known invariant gap in CA-7: `set_admin` and `upgrade` do not emit explicit events from this contract; their audit trail relies on whatever admin-sep emits and on the Stellar transaction record itself. This is documented in §6.
+Known invariant gap in CA-7: `upgrade` does not emit an explicit Moonlight event from this contract; its audit trail relies on the Stellar transaction record itself. Admin transfer uses OpenZeppelin Ownable events.
 
 ### 4.2 Privacy Channel invariants
 
 - **PC-1 (immutable asset binding).** Once set in the constructor, `Asset` is never overwritten by any code path. The only writer is `write_asset_unchecked`, which is only called from `__constructor`. There is no setter exposed externally. *Enforced by code structure.*
-- **PC-2 (immutable auth binding).** The auth-contract address (`STORAGE_KEY_UTXO_AUTH`) is set in the constructor and has no externally callable setter. The internal `set_auth` is `#[internal]` and is therefore not in the contract's external interface. *Enforced by code structure.*
+- **PC-2 (immutable auth binding).** The auth-contract address (`STORAGE_KEY_UTXO_AUTH`) is set in the constructor via the `UtxoHandlerTrait::set_auth` helper and has no externally callable setter. *Enforced by code structure.*
 - **PC-3 (supply ↔ external flow).** `Supply` increases only via `increase_supply` (called once per `ExtDeposit` in `execute_external_operations`) and decreases only via `decrease_supply` (called once per `ExtWithdraw`). It does not change in response to internal `Spend` / `Create`. *Enforced by `transact.rs:121-148`.*
 - **PC-4 (bundle balance).** `process_bundle` enforces `total_available_balance == expected_outgoing` at the end of each bundle. Net effect: `sum_spent + total_deposit == sum_created + total_withdraw`. *Enforced by `core.rs:189-193`.*
 - **PC-5 (UTXO uniqueness — create).** No UTXO key may be created if any prior record exists for it (whether unspent or spent). *Enforced by `verify_utxo_not_exists` (simple) or `is_bit_set` check + meta lookup (drawer).*
@@ -381,8 +382,8 @@ Auditors may reasonably assume the following are part of the audit; they are not
 - **The browser-wallet, council-console, provider-console, network-dashboard**: front-end applications. Out of scope.
 - **The local-dev** orchestration repo: Docker Compose harness for E2E testing. Provides regression evidence (see `tests.md`) but its own code is not in audit scope.
 - **The `contracts/token/` test token**: a workspace-internal token used only in `privacy-channel` integration tests. Not deployed.
-- **The `admin-sep` crate** (`theahaco/admin-sep`): pulled in via git, rev `bf195f4d67cc96587974212f998680ccf9a61cd7`. Provides `Administratable` and `Upgradable` traits. Auditors should treat its behavior as part of the trusted base; if a deeper audit of `admin-sep` is desired, that is a separate scope.
-- **The Soroban SDK fork** (`theahaco/rs-soroban-sdk`, rev `5a99659f1483c926ff87ea45f8823b8c00dc4cbd`): the workspace pins a specific revision of an Aha-maintained fork rather than `stellar/rs-soroban-sdk`. Where this fork diverges from upstream is itself worth review, but the SDK code is not in this audit scope. Auditors should be aware of the fork pin and may want to ask for the diff against upstream.
+- **OpenZeppelin Stellar crates** (`stellar-access` and `stellar-contract-utils`): provide Ownable admin transfer and upgrade helpers. Auditors should treat these as part of the trusted base; deeper review of OpenZeppelin internals is a separate scope.
+- **Soroban SDK** (`soroban-sdk =25.3.0`): the workspace uses the public crates.io SDK rather than the previous fork. The OpenZeppelin crates enable SDK spec-shaking support, so contract builds should use `stellar contract build` with Stellar CLI 25.2 or newer.
 - **Stellar Asset Contract** behavior: the channel trusts its configured asset SAC to enforce its own transfer semantics. Custom non-SAC assets are not a tested path.
 
 ---
@@ -393,11 +394,10 @@ Captured here so readers do not need to grep the workspace.
 
 - **Rust edition:** 2021 (workspace).
 - **WASM target:** `wasm32v1-none` (Soroban-supported target; `release.yml` builds against this).
-- **Soroban SDK:** git pin `https://github.com/theahaco/rs-soroban-sdk` rev `5a99659f1483c926ff87ea45f8823b8c00dc4cbd`.
-- **`admin-sep`:** git pin `https://github.com/theahaco/admin-sep` rev `bf195f4d67cc96587974212f998680ccf9a61cd7`.
-- **`stellar-default-impl-macro`:** git pin `https://github.com/OpenZeppelin/stellar-contracts` tag `v0.3.0`.
-- **`wee_alloc`:** workspace dep version 0.4 (used as `#[global_allocator]` for `wasm32` builds).
-- **Build command (CI):** `stellar contract build` (latest `stellar-cli`, locked install).
+- **Soroban SDK:** crates.io `soroban-sdk =25.3.0`.
+- **OpenZeppelin:** crates.io `stellar-access =0.7.1` and `stellar-contract-utils =0.7.1`.
+- **Allocator:** the workspace enables the Soroban SDK `alloc` feature. The previous direct `wee_alloc` allocator is no longer used.
+- **Build command (CI):** `stellar contract build` with Stellar CLI 25.2 or newer.
 - **Release profile:** `opt-level = "z"`, `lto = true`, `codegen-units = 1`, `panic = "abort"`, `overflow-checks = true`, `strip = true`. Crucially, `overflow-checks` are enabled in release; arithmetic overflow panics rather than wrapping.
 
 Per-contract Cargo features in use:

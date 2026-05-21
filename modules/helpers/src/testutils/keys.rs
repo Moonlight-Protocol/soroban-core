@@ -39,8 +39,7 @@ impl Ed25519Account {
 
     pub fn from_signing_key(e: &Env, signing_key: NativeSigningKey) -> Ed25519Account {
         let verifying_key = signing_key.verifying_key();
-        let public_key_str =
-            Strkey::PublicKeyEd25519(ed25519::PublicKey(verifying_key.to_bytes()));
+        let public_key_str = Strkey::PublicKeyEd25519(ed25519::PublicKey(verifying_key.to_bytes()));
 
         let address_bytes = Bytes::from_slice(&e, public_key_str.to_string().as_bytes());
         let address = Address::from_string_bytes(&address_bytes);
@@ -64,7 +63,8 @@ impl Ed25519Account {
         let raw_signature = self.sign(e, msg);
 
         AccountEd25519Signature {
-            public_key: BytesN::<32>::try_from_val(e, &self.signing_key.verifying_key().to_bytes()).unwrap(),
+            public_key: BytesN::<32>::try_from_val(e, &self.signing_key.verifying_key().to_bytes())
+                .unwrap(),
             signature: BytesN::<64>::try_from_val(e, &raw_signature).unwrap(),
         }
     }

@@ -16,11 +16,11 @@ testutils = ["soroban-sdk/testutils", "moonlight-utxo-core/testutils"]
 
 [dependencies]
 soroban-sdk = { workspace = true }
-admin-sep = { workspace = true}
+stellar-access = { workspace = true }
+stellar-contract-utils = { workspace = true }
 moonlight-utxo-core = { workspace = true , features = [ "no-utxo-events", "no-bundle-events"] }
 moonlight-auth = { workspace = true }
 moonlight-primitives = { workspace = true }
-wee_alloc = {workspace = true}
 
 
 
@@ -30,4 +30,3 @@ moonlight-utxo-core = { workspace = true, features = ["testutils"] }
 channel-auth-contract = { workspace = true  }
 moonlight-helpers = { workspace = true, features = ["testutils"] }
 token-contract = { workspace = true , features = ["testutils"] }
-

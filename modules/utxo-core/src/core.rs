@@ -1,8 +1,7 @@
 use moonlight_errors::Error as MoonlightError;
 use moonlight_primitives::{no_duplicate_keys, AuthRequirements, Condition, SignerKey};
 use soroban_sdk::{
-    assert_with_error, contracttrait, contracttype, panic_with_error, vec, BytesN, Env, IntoVal,
-    Map, Symbol, Vec,
+    assert_with_error, contracttype, panic_with_error, vec, BytesN, Env, IntoVal, Map, Symbol, Vec,
 };
 
 use moonlight_storage::Store;
@@ -31,7 +30,6 @@ pub struct UTXOOperation {
 
 pub const STORAGE_KEY_UTXO_AUTH: &Symbol = &symbol_short!("UTXO_AUTH");
 
-#[contracttrait]
 pub trait UtxoHandlerTrait {
     fn auth(env: &Env) -> soroban_sdk::Address {
         env.storage()
@@ -64,7 +62,6 @@ pub trait UtxoHandlerTrait {
         balances
     }
 
-    #[internal]
     fn process_bundle(
         e: &Env,
         bundle: InternalBundle,
@@ -162,7 +159,6 @@ pub trait UtxoHandlerTrait {
     ///
     ///### Panics
     /// - Panics if the UTXO already exists.
-    #[internal]
     fn create(e: &Env, amount: i128, utxo: BytesN<65>) {
         Self::verify_utxo_not_exists(&e, utxo.clone());
 
@@ -180,14 +176,12 @@ pub trait UtxoHandlerTrait {
     /// ### Panics
     /// - Panics if signature verification fails.
     /// - Panics if the UTXO is already spent or does not exist.
-    #[internal]
     fn spend(e: &Env, utxo: &BytesN<65>) -> i128 {
         let amount = Self::verify_utxo_unspent(&e, utxo.clone());
         Self::unchecked_spend(&e, utxo.clone(), amount);
         amount
     }
 
-    #[internal]
     fn unchecked_create(e: &Env, amount: i128, utxo: &BytesN<65>) {
         Store::apply(e, |store| store.create(utxo, amount));
 
@@ -201,7 +195,6 @@ pub trait UtxoHandlerTrait {
         .publish(&e);
     }
 
-    #[internal]
     fn unchecked_spend(e: &Env, utxo: BytesN<65>, _amount: i128) {
         Store::apply(e, |store| {
             store.spend(&utxo);
@@ -217,14 +210,12 @@ pub trait UtxoHandlerTrait {
         .publish(&e);
     }
 
-    #[internal]
     fn verify_utxo_not_exists(e: &Env, utxo: BytesN<65>) {
         if Store::apply(e, |store| store.balance(&utxo)) != -1 {
             panic_with_error!(e, MoonlightError::UtxoAlreadyExists);
         }
     }
 
-    #[internal]
     fn verify_utxo_unspent(e: &Env, utxo: BytesN<65>) -> i128 {
         match Store::apply(e, |store| store.balance(&utxo)) {
             a if a > 0 => a,

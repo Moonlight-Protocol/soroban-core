@@ -1,5 +1,12 @@
 # Soroban Core — Self-Service Static Analysis
 
+> **Status:** This report is historical and predates the OpenZeppelin Ownable /
+> SDK 25 migration. Sections that mention the old `theahaco` SDK fork,
+> `admin-sep`, or direct `wee_alloc` dependency describe the previous dependency
+> graph, not the current workspace. Do not use the dependency findings below as
+> current audit evidence until `cargo audit` and the documented static checks are
+> rerun against the current workspace dependency graph.
+
 This document satisfies item 5 of the Soroban Audit Bank intake form ("self-service tooling vulnerability scan results, with remediation plan for any findings"). It captures the tools run, the exact commands used, the raw findings, and the per-finding remediation plan.
 
 The audit scope is the two contracts in `contracts/` plus the `modules/` they compile against. The `contracts/token/` test-only token is excluded from the security plan but still scanned by the workspace-wide commands.
@@ -74,7 +81,10 @@ The dependency arrives through the Soroban SDK pin (`theahaco/rs-soroban-sdk`, r
 
   in both `contracts/channel-auth/src/lib.rs` and `contracts/privacy-channel/src/lib.rs`.
 
-**Remediation plan:** **Track for follow-up; not blocking the audit.**
+**Remediation plan:** **Superseded by the OpenZeppelin Ownable / SDK 25
+migration.** The current workspace no longer has a direct `wee_alloc`
+dependency; confirm the full current advisory state with a refreshed
+`cargo audit` run.
 
 `wee_alloc` is a small-footprint allocator widely used in the Soroban / Stellar contract ecosystem to keep WASM code size small. The advisory flags maintenance status, not a known vulnerability. Replacing it would require:
 
@@ -84,10 +94,15 @@ The dependency arrives through the Soroban SDK pin (`theahaco/rs-soroban-sdk`, r
 
 This is a self-contained change but represents a non-trivial regression-test surface; it does not block audit readiness and should be scheduled as a separate PR after the Audit Bank engagement completes (so that any fix can be applied alongside the audit firm's findings rather than re-shuffling auditable code immediately before audit).
 
+**Migration note:** the OpenZeppelin Ownable / SDK 25 migration removes the
+direct `wee_alloc` dependency and uses the Soroban SDK `alloc` feature instead.
+This finding is superseded in the current workspace, pending a refreshed
+`cargo audit` run.
+
 ### 2.4 Net audit-form summary
 
-- **0 known vulnerabilities** in the dependency graph.
-- **3 unmaintained-crate advisories** — 2 transitive (out of our control), 1 direct (`wee_alloc`, scheduled).
+- **Historical result:** 0 known vulnerabilities in the previous dependency graph.
+- **Historical result:** 3 unmaintained-crate advisories — 2 transitive (out of our control), 1 direct (`wee_alloc`, now superseded by the SDK 25 migration).
 - **0 of the findings represent an exploitable on-chain risk** at the contract layer.
 
 ---
@@ -262,7 +277,7 @@ A signature with `valid_until_ledger == current_sequence` is **still valid** (th
 |---|---|---|---|
 | F-AUDIT-1 | `derivative` unmaintained (transitive) | Accept-and-track | Future Soroban SDK upgrade |
 | F-AUDIT-2 | `paste` unmaintained (transitive) | Accept-and-track | Future Soroban SDK upgrade |
-| F-AUDIT-3 | `wee_alloc` unmaintained (direct) | Track for follow-up | Post-audit cleanup PR |
+| F-AUDIT-3 | `wee_alloc` unmaintained (direct) | Superseded by SDK allocator migration; verify with refreshed audit | Fresh static-analysis rerun |
 | F-CLIPPY-1 | 17× `missing_panics_doc` | Track for follow-up | Doc-only PR |
 | F-CLIPPY-2 | 290× style-only warnings | Defer | Project-wide cleanup |
 | F-MANUAL-1 | Verifier wrappers rely on host panic | Track for follow-up | Hardening PR |

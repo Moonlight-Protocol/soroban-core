@@ -10,17 +10,32 @@ use soroban_sdk::{
 #[contract]
 pub struct UTXOModuleTestContract;
 
-#[contractimpl]
 impl UtxoHandlerTrait for UTXOModuleTestContract {}
 
 #[contractimpl]
 impl UTXOModuleTestContract {
     pub fn __constructor(e: Env, utxo_auth: Address) {
-        Self::set_auth(&e, &utxo_auth);
+        Self::set_auth(&e, utxo_auth);
     }
 
     pub fn transact(e: Env, op: UTXOOperation) {
         Self::transact_with_external(e, op, 0, 0);
+    }
+
+    pub fn auth(e: &Env) -> Address {
+        <Self as UtxoHandlerTrait>::auth(e)
+    }
+
+    pub fn set_auth(e: &Env, new_auth: Address) {
+        <Self as UtxoHandlerTrait>::set_auth(e, &new_auth);
+    }
+
+    pub fn utxo_balance(e: &Env, utxo: BytesN<65>) -> i128 {
+        <Self as UtxoHandlerTrait>::utxo_balance(e, utxo)
+    }
+
+    pub fn utxo_balances(e: &Env, utxos: Vec<BytesN<65>>) -> Vec<i128> {
+        <Self as UtxoHandlerTrait>::utxo_balances(e, utxos)
     }
 
     pub fn transact_with_external(

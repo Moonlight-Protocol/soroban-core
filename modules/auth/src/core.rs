@@ -3,8 +3,8 @@ use moonlight_primitives::{
     hash_payload, AuthPayload, AuthRequirements, Condition, Signature, Signatures, SignerKey,
 };
 use soroban_sdk::{
-    auth::Context, contracterror, contracttrait, contracttype, crypto::Hash, Address, Bytes,
-    BytesN, Env, Map, TryIntoVal, Vec,
+    auth::Context, contracterror, contracttype, crypto::Hash, Address, Bytes, BytesN, Env, Map,
+    TryIntoVal, Vec,
 };
 
 #[contracterror]
@@ -72,9 +72,7 @@ pub fn verify_signature(
     }
 }
 
-#[contracttrait]
 pub trait UtxoAuthorizable {
-    #[internal]
     fn handle_utxo_auth(
         e: &Env,
         signatures: Signatures, // provided by tx submitter in Authorization entry
@@ -146,7 +144,6 @@ pub enum ProviderDataKey {
     AuthorizedProvider(Address),
 }
 
-#[contracttrait]
 pub trait ProviderAuthorizable {
     /// Checks if the given address is a registered provider.
     ///
@@ -163,7 +160,6 @@ pub trait ProviderAuthorizable {
     ///
     /// ### Panics
     /// - Panics if the provider is already registered.
-    #[internal]
     fn register_provider(e: &Env, provider: Address) {
         assert!(
             !Self::is_provider(&e, provider.clone()),
@@ -179,7 +175,6 @@ pub trait ProviderAuthorizable {
     ///
     /// ### Panics
     /// - Panics if the provider is not registered.
-    #[internal]
     fn deregister_provider(e: &Env, provider: Address) {
         assert!(
             Self::is_provider(&e, provider.clone()),
@@ -197,7 +192,6 @@ pub trait ProviderAuthorizable {
     /// ### Panics
     /// - Panics if the provider is not registered.
     /// - Panics if the transaction is not authorized by the provider.
-    #[internal]
     fn require_provider(e: &Env, payload: Hash<32>, signatures: Signatures) -> Result<(), Error> {
         let sig_map = signatures.0;
 

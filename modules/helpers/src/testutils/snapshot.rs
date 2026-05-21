@@ -1,6 +1,6 @@
 use core::str::FromStr;
 
-use soroban_sdk::Env;
+use soroban_sdk::{testutils::Ledger, Env};
 
 use crate::testutils::keys::Ed25519Account;
 use stellar_strkey::ed25519;
@@ -17,7 +17,9 @@ fn hex_to_bytes(hex_str: &str) -> [u8; 32] {
 
 pub fn get_env_with_g_accounts() -> Env {
     let snapshot_path = concat!(env!("CARGO_MANIFEST_DIR"), "/src/testutils/snapshot.json");
-    Env::from_ledger_snapshot_file(snapshot_path)
+    let env = Env::from_ledger_snapshot_file(snapshot_path);
+    env.ledger().set_protocol_version(25);
+    env
 }
 
 pub fn get_snapshot_g_accounts(

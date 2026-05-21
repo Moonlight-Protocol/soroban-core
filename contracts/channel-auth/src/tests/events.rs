@@ -1,12 +1,18 @@
 use soroban_sdk::{
     testutils::{Address as _, Events, MockAuth, MockAuthInvoke},
-    vec, Address, Env, IntoVal, Symbol, Val, Vec,
+    Address, Env, Event, IntoVal,
 };
 
-use crate::contract::ChannelAuthContractClient;
 use super::tests::create_contract;
+use crate::contract::ChannelAuthContractClient;
+use crate::contract::{ContractInitialized, ProviderAdded, ProviderRemoved};
 
-fn add_provider_with_auth(client: &ChannelAuthContractClient, admin: &Address, provider: &Address, e: &Env) {
+fn add_provider_with_auth(
+    client: &ChannelAuthContractClient,
+    admin: &Address,
+    provider: &Address,
+    e: &Env,
+) {
     client
         .mock_auths(&[MockAuth {
             address: admin,
@@ -20,7 +26,12 @@ fn add_provider_with_auth(client: &ChannelAuthContractClient, admin: &Address, p
         .add_provider(provider);
 }
 
-fn remove_provider_with_auth(client: &ChannelAuthContractClient, admin: &Address, provider: &Address, e: &Env) {
+fn remove_provider_with_auth(
+    client: &ChannelAuthContractClient,
+    admin: &Address,
+    provider: &Address,
+    e: &Env,
+) {
     client
         .mock_auths(&[MockAuth {
             address: admin,
@@ -40,15 +51,11 @@ fn test_constructor_emits_initialized_event() {
     let (client, admin) = create_contract(&e);
 
     let events = e.events().all();
-    let expected_topics: Vec<Val> = vec![
-        &e,
-        Symbol::new(&e, "contract_initialized").into_val(&e),
-        admin.into_val(&e),
-    ];
-
-    let last = events.last().unwrap();
-    assert_eq!(last.0, client.address);
-    assert_eq!(last.1, expected_topics);
+    let last = events.events().last().unwrap();
+    assert_eq!(
+        last,
+        &ContractInitialized { admin }.to_xdr(&e, &client.address)
+    );
 }
 
 #[test]
@@ -60,15 +67,11 @@ fn test_add_provider_emits_event() {
     add_provider_with_auth(&client, &admin, &provider, &e);
 
     let events = e.events().all();
-    let expected_topics: Vec<Val> = vec![
-        &e,
-        Symbol::new(&e, "provider_added").into_val(&e),
-        provider.into_val(&e),
-    ];
-
-    let last = events.last().unwrap();
-    assert_eq!(last.0, client.address);
-    assert_eq!(last.1, expected_topics);
+    let last = events.events().last().unwrap();
+    assert_eq!(
+        last,
+        &ProviderAdded { provider }.to_xdr(&e, &client.address)
+    );
 }
 
 #[test]
@@ -81,15 +84,11 @@ fn test_remove_provider_emits_event() {
     remove_provider_with_auth(&client, &admin, &provider, &e);
 
     let events = e.events().all();
-    let expected_topics: Vec<Val> = vec![
-        &e,
-        Symbol::new(&e, "provider_removed").into_val(&e),
-        provider.into_val(&e),
-    ];
-
-    let last = events.last().unwrap();
-    assert_eq!(last.0, client.address);
-    assert_eq!(last.1, expected_topics);
+    let last = events.events().last().unwrap();
+    assert_eq!(
+        last,
+        &ProviderRemoved { provider }.to_xdr(&e, &client.address)
+    );
 }
 
 #[test]

@@ -208,8 +208,8 @@ The following invariants from `arch.md` are *not* directly exercised by the exis
 | **PC-11 (no condition conflicts)** | `BundleHasConflictingConditions` error has no direct test that submits a bundle with `Create(u, 100)` on one spend and `Create(u, 200)` on another. |
 | **PC-12 (overflow safety on totals)** | `AmountOverflow` is not exercised. Hard to trigger naturally (requires `i128::MAX`-class amounts), but a unit test with crafted inputs would document the path. |
 | **Drawer rotation** | The bitmap drawer rotates at 524,288 slots. No test pushes the slot allocator past `SLOTS_PER_DRAWER` to exercise the rotation+flush path in `alloc_slot_and_rotate_if_needed`. The team should consider a targeted storage-level test instead of a full contract test for this path. |
-| **Upgrade path** | `Upgradable::upgrade(wasm_hash)` from `admin-sep` is not exercised by any in-tree test. The pattern is admin-gated and inherited from a trusted base, but the lack of a regression test means any locally-introduced override would not be caught. |
-| **`set_admin` event** | There is no event emitted on `set_admin`; this is documented as an invariant gap in arch §4.1, not a test gap. |
+| **Upgrade path** | The OpenZeppelin-backed `upgrade(wasm_hash)` wrapper is not exercised by any in-tree test. The pattern is admin-gated through Ownable, but the lack of a regression test means any locally-introduced override would not be caught. |
+| **Admin transfer flow** | `set_admin` now starts a pending OpenZeppelin Ownable transfer and `accept_admin` completes it. There is no in-tree test for the two-step transition yet. |
 
 ### 3.2 Test-mocking caveats
 

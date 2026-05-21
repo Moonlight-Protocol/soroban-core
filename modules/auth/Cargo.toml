@@ -5,7 +5,7 @@ version = "1.0.0"
 edition = "2021"
 
 [features]
-testutils = ["soroban-sdk/testutils", "moonlight-helpers/testutils", "moonlight-utxo-core/testutils", "stellar-strkey", "admin-sep"]
+testutils = ["soroban-sdk/testutils", "moonlight-helpers/testutils", "moonlight-utxo-core/testutils", "stellar-strkey"]
 
 [lib]
 crate-type = ["rlib"]
@@ -13,8 +13,7 @@ doctest = false
 
 [dependencies]
 soroban-sdk = { workspace = true }
-stellar-strkey = { version = "0.0.13", optional = true}
-admin-sep  = { workspace = true, optional = true}
+stellar-strkey = { version = "0.0.16", optional = true}
 moonlight-helpers = { workspace = true}
 moonlight-primitives = { workspace = true}
 

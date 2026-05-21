@@ -30,7 +30,7 @@ Cross-references to invariants (CA-1..CA-7, PC-1..PC-15, X-1..X-2) are to `arch.
 
 | ID | Threat | Likelihood | Impact | Mitigation | Residual |
 |---|---|---|---|---|---|
-| CA-T-1 | Attacker tries to add themselves to the provider set without admin auth. | High | Critical | `add_provider` calls `Self::require_admin(e)` first; admin-sep traits enforce admin signature presence. (CA-1) | Low |
+| CA-T-1 | Attacker tries to add themselves to the provider set without admin auth. | High | Critical | `add_provider` calls OpenZeppelin Ownable `enforce_owner_auth` first. (CA-1) | Low |
 | CA-T-2 | Attacker tries to remove a competing provider, denying that provider its bundle-signing role. | Medium | Medium | Same as CA-T-1: admin-gated. (CA-1) | Low |
 | CA-T-3 | Attacker forges an `AuthRequirements` argument to bypass per-UTXO P256 verification. | Medium | High | `AuthRequirements` is parsed from `args[0]` via `try_into_val`; type mismatches error `BadArg`. The map's keys are `SignerKey::P256(pk)` and the verification routine recomputes the payload over the *same* conditions before checking. An attacker who tampers with the requirements map can only either (a) drop a P256 entry (in which case the corresponding spend's `MissingSignature` error fires), (b) add an extraneous entry (silently skipped if non-P256, or fails verification if P256 with no real signer). The map cannot be tampered with to authorize a UTXO whose owner did not sign. (CA-4) | Low |
 | CA-T-4 | Attacker tampers with `valid_until_ledger` to extend a stale signature's lifetime. | Medium | High | `valid_until_ledger` is signed-over as part of the auth payload (`hash_payload(AuthPayload { ..., live_until_ledger })`). Modifying it changes the payload and invalidates the signature. (CA-3, CA-4) | Low |
@@ -41,7 +41,7 @@ Cross-references to invariants (CA-1..CA-7, PC-1..PC-15, X-1..X-2) are to `arch.
 | ID | Threat | Likelihood | Impact | Mitigation | Residual |
 |---|---|---|---|---|---|
 | CA-R-1 | Admin denies having added or removed a particular provider. | Low | Medium | `ProviderAdded` and `ProviderRemoved` events are emitted at every governance action (CA-7), bound to the registered provider's address. Combined with the Stellar transaction record showing the signed admin auth-entry, this provides a non-repudiable trail. | Low |
-| CA-R-2 | Admin denies having upgraded the contract. | Medium | Medium | The contract does not emit a dedicated `ContractUpgraded` event (gap noted in arch §4.1). However, contract upgrade is observable on-chain via the Stellar transaction itself (the `upload_contract_wasm` / `extend_contract` operations are public ledger entries); admin-sep produces internal hooks that may emit. The audit trail exists but is shallower than for provider mutations. | **Medium** |
+| CA-R-2 | Admin denies having upgraded the contract. | Medium | Medium | The contract does not emit a dedicated `ContractUpgraded` event (gap noted in arch §4.1). However, contract upgrade is observable on-chain via the Stellar transaction itself (the `upload_contract_wasm` / `extend_contract` operations are public ledger entries). The audit trail exists but is shallower than for provider mutations. | **Medium** |
 | CA-R-3 | Admin denies having transferred admin rights. | Medium | Medium | Same as CA-R-2: no dedicated event from this contract. The `set_admin` call is on-chain and visible in the transaction record, but there is no in-contract signal. | **Medium** |
 | CA-R-4 | Provider denies having signed a particular bundle. | Low | Medium | The provider's Ed25519 signature is part of the Soroban auth-entry XDR captured in the transaction's metadata. Cryptographic non-repudiation is full. | Low |
 
@@ -66,7 +66,7 @@ Cross-references to invariants (CA-1..CA-7, PC-1..PC-15, X-1..X-2) are to `arch.
 
 | ID | Threat | Likelihood | Impact | Mitigation | Residual |
 |---|---|---|---|---|---|
-| CA-E-1 | Provider escalates to admin (e.g. by tricking the admin into signing an `add_provider` for the provider's own future admin address, then `set_admin`). | Low | Critical | Only the admin can call `set_admin`; admin-sep enforces this. A provider has no path to admin promotion. | Low |
+| CA-E-1 | Provider escalates to admin (e.g. by tricking the admin into signing an `add_provider` for the provider's own future admin address, then `set_admin`). | Low | Critical | Only the current owner can call `set_admin`, and the pending owner must call `accept_admin`; OpenZeppelin Ownable enforces both steps. A provider has no path to admin promotion. | Low |
 | CA-E-2 | UTXO owner (P256) escalates to provider. | Low | Critical | P256 signers are verified per-UTXO; their authority is bound to specific spends. They cannot satisfy the provider check (CA-2) without an Ed25519 signature from a registered provider. | Low |
 | CA-E-3 | Compromised admin key escalates further (e.g., to the admin of *other* Channel Auth instances). | n/a | n/a | This is not an in-contract escalation; admin-key compromise is a key-management issue. The Moonlight Security Council multi-sig (Stellar-native) is the documented mitigation (per README's mermaid: "admin = Moonlight Security Council multi-sig"). | n/a (out of contract) |
 | CA-E-4 | Stale upgrade WASM (admin-approved historical upgrade) is replayed to revert to a vulnerable version. | Low | Critical | Soroban auth-entry nonces and `valid_until_ledger` prevent literal replay of historical admin signatures. A new upgrade requires a fresh admin signature. | Low |
@@ -167,7 +167,7 @@ The team flags the following as the spots most worth the assigned audit firm's a
 
 1. **PC-T-3 (deposit with empty conditions list).** The auth payload for the depositor's `require_auth_for_args` is `vec![&e, conditions.into_val(&e)]`. If a client constructs a deposit with an empty conditions list, the depositor must sign over an explicitly-empty list. Whether this is a legitimate path depends on whether the SDK ever produces zero-condition deposits and whether such a payload is acceptable to the underlying SAC. Worth tracing.
 2. **PC-R-3 (no events on internal-only transacts).** This is intentional cost optimization but means the on-chain audit trail is shallower than auditors of typical smart contracts may expect.
-3. **CA-R-2/3 (no `set_admin` / `upgrade` events).** Combined with the inherited admin-sep traits, this means the audit trail for governance is partially implicit.
+3. **CA-R-2/3 (governance audit trail).** OpenZeppelin Ownable emits ownership-transfer events, but `upgrade` still has no dedicated Moonlight event; part of the governance trail remains implicit in the transaction record.
 4. **F-MANUAL-1 (signature-verifier wrappers).** Not currently exploitable but worth re-validating against any future Soroban SDK upgrade.
 5. **F-MANUAL-2 (zero-arg context bypass).** Code-structural rather than vulnerability; coupling that future refactors could break.
 6. **X-2 (shared admin compromise).** Architectural rather than code-level. The mitigation lives in the admin key's multi-sig configuration, which is off-contract.
