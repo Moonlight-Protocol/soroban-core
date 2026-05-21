@@ -207,8 +207,7 @@ The following invariants from `arch.md` are *not* directly exercised by the exis
 | **PC-10 (cross-side condition equality)** | The test-only `ChannelOperationBuilder` enforces this via `panic!` at construction time (`channel_operation_builder.rs:77-82`), but the on-chain `ConflictingConditionsForAccount` error itself is not exercised by a test that submits to `transact`. |
 | **PC-11 (no condition conflicts)** | `BundleHasConflictingConditions` error has no direct test that submits a bundle with `Create(u, 100)` on one spend and `Create(u, 200)` on another. |
 | **PC-12 (overflow safety on totals)** | `AmountOverflow` is not exercised. Hard to trigger naturally (requires `i128::MAX`-class amounts), but a unit test with crafted inputs would document the path. |
-| **Drawer rotation** | The bitmap drawer (`storage-drawer`) tests rotate at 1024 slots. No test pushes the slot allocator past `SLOTS_PER_DRAWER` to exercise the rotation+flush path in `alloc_slot_and_rotate_if_needed_cached`. The team should consider a stress test minting >1024 UTXOs in a session. |
-| **Storage backend swap** | All tests run with the workspace-default backend (`storage-drawer`). The `storage-simple` backend is compile-checked but not exercised end-to-end. |
+| **Drawer rotation** | The bitmap drawer rotates at 524,288 slots. No test pushes the slot allocator past `SLOTS_PER_DRAWER` to exercise the rotation+flush path in `alloc_slot_and_rotate_if_needed`. The team should consider a targeted storage-level test instead of a full contract test for this path. |
 | **Upgrade path** | `Upgradable::upgrade(wasm_hash)` from `admin-sep` is not exercised by any in-tree test. The pattern is admin-gated and inherited from a trusted base, but the lack of a regression test means any locally-introduced override would not be caught. |
 | **`set_admin` event** | There is no event emitted on `set_admin`; this is documented as an invariant gap in arch §4.1, not a test gap. |
 

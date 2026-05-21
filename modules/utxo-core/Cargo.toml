@@ -9,10 +9,7 @@ edition = "2021"
 testutils = [ "soroban-sdk/testutils", "moonlight-helpers/testutils", ] 
 no-utxo-events = [] # disable utxo events for cost optimization on bigger batches
 no-bundle-events = [ ] # disable bundle events for cost optimization on bigger batches
-default = ["storage-drawer", "no-utxo-events", "no-bundle-events"] # default features
-
-storage-drawer = ["moonlight-storage/storage-drawer"]
-storage-simple = ["moonlight-storage/storage-simple"]
+default = ["no-utxo-events", "no-bundle-events"] # default features
 
 [lib]
 crate-type = ["rlib"]
@@ -20,6 +17,7 @@ doctest = false
 
 [dependencies]
 soroban-sdk = { git = "https://github.com/theahaco/rs-soroban-sdk", rev = "5a99659f1483c926ff87ea45f8823b8c00dc4cbd" }
+moonlight-errors = { workspace = true }
 moonlight-helpers = { workspace = true }
 moonlight-primitives = { workspace = true }
 moonlight-storage = { workspace = true }

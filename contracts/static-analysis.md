@@ -134,8 +134,7 @@ These flag functions that may panic without a `# Panics` rustdoc section. Each o
 | File | Function | Reason for panic |
 |---|---|---|
 | `modules/helpers/src/parser.rs` | `address_to_ed25519_pk_bytes` | Invalid UTF-8, invalid Strkey, non-ed25519 address (testutils-only path). |
-| `modules/storage/src/simple.rs` | `SimpleStore::create`, `SimpleStore::spend` | Already-exists / already-spent / not-exists (intentional revert). |
-| `modules/storage/src/drawer.rs` | `DrawerStore::create_cached`, `spend_cached`, `alloc_slot_and_rotate_if_needed_cached` | Already-exists / already-spent / drawer-id u32 overflow (last is unreachable in practice). |
+| `modules/storage/src/lib.rs` | `Store::apply`, `Store::create`, `Store::spend`, `alloc_slot_and_rotate_if_needed` | Closure panic / already-exists / already-spent / not-exists / drawer-id u32 overflow (last is unreachable in practice). |
 | `modules/utxo-core/src/core.rs` | `process_bundle`, `verify_utxo_not_exists`, `verify_utxo_unspent`, `auth` | Bundle-balance / UTXO-state / missing-auth-config reverts. |
 | `modules/auth/src/core.rs` | `register_provider`, `deregister_provider`, `require_provider` | Provider-already / not-registered / signature checks. |
 | `contracts/privacy-channel/src/transact.rs` | `pre_process_channel_operation`, `verify_external_operations`, `op_has_no_conflicting_conditions` (via `panic_with_error!`) | Bundle-shape reverts. |
@@ -225,7 +224,7 @@ Other revert paths in the codebase use `panic_with_error!(env, Error::SomeVarian
 | `contracts/privacy-channel/src/storage.rs:20` (`read_asset`) | Constructor sets it; impossible-by-construction. |
 | `modules/auth/src/core.rs:99` | Map key was just iterated from same map; impossible-by-construction. |
 | `modules/auth/src/core.rs:218` | `.ok_or(MissingSignature).unwrap()` — would be more consistent as `?` propagation. |
-| `modules/storage/src/drawer.rs:104` | Just-set `Option<DrawerState>::Some(_)`; impossible. |
+| `modules/storage/src/lib.rs` | Just-set `Option<DrawerState>::Some(_)`; impossible. |
 | `modules/utxo-core/src/core.rs:68` (`auth`) | Constructor sets it; impossible-by-construction. |
 | `modules/helpers/src/parser.rs:31` | Bare `panic!` in `address_to_ed25519_pk_bytes`. testutils-only path. |
 

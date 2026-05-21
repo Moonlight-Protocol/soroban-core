@@ -200,10 +200,9 @@ The four operation types in the README — Create, Spend, ExtDeposit, ExtWithdra
 
 **Persistent storage** (per-UTXO, lives independently of contract instance TTL):
 
-The active backend is selected at compile time via mutually exclusive cargo features `storage-simple` and `storage-drawer`. The default selected by `moonlight-utxo-core` is `storage-drawer`.
+The storage module uses one drawer-backed layout. Each UTXO is a `UtxoMeta { amount, drawer_id, slot_idx }` entry plus a bit in a 524,288-slot bitmap stored at `DrawerDataKey::Drawer(DrawerKey { id })`. Each drawer bitmap can grow up to 65,536 bytes and is extended lazily as higher slots are allocated. There is also a `DrawerDataKey::State` entry that tracks the current allocation pointer (`current_drawer: u32`, `next_slot: u32`). The drawer layout amortizes storage cost across many UTXOs by packing the spent/unspent flag into a shared bitmap.
 
-- **`storage-simple`** (`modules/storage/src/simple.rs`): each UTXO is a separate persistent entry keyed by `UTXOCoreDataKey::UTXO(sha256(pk65))`, value `UtxoState::Unspent(i128) | Spent`.
-- **`storage-drawer`** (`modules/storage/src/drawer.rs`): each UTXO is a `UtxoMeta { amount, drawer_id, slot_idx }` entry plus a bit in a 1024-slot bitmap stored at `DrawerDataKey::Drawer(DrawerKey { id })`. There is also a `DrawerDataKey::State` entry that tracks the current allocation pointer (`current_drawer: u32`, `next_slot: u32`). The drawer backend is intended to amortize storage cost across many UTXOs by packing the spent/unspent flag into a shared bitmap.
+`moonlight-storage::Store::apply` owns the scoped drawer cache. UTXO core code performs bundle logic inside the scope; storage privately batches dirty drawer state and bitmap writes until the scope returns.
 
 UTXO keys are hashed (sha256) before being stored, so storage uses 32-byte keys instead of 65-byte ones. This is a cost optimization; collision resistance comes from sha256.
 
@@ -405,7 +404,7 @@ Per-contract Cargo features in use:
 
 - `contracts/channel-auth/`: no features; default deps.
 - `contracts/privacy-channel/`: links `moonlight-utxo-core` with `["no-utxo-events", "no-bundle-events"]` (event suppression). The `testutils` feature pulls testutils from utxo-core and Soroban SDK for unit tests.
-- `modules/utxo-core/`: default features = `["storage-drawer", "no-utxo-events", "no-bundle-events"]`. The `storage-drawer` flag selects the bitmap-optimized backend over `storage-simple`.
-- `modules/storage/`: provides `storage-simple` and `storage-drawer` as mutually exclusive features; selected by the consuming crate.
+- `modules/utxo-core/`: default features = `["no-utxo-events", "no-bundle-events"]`.
+- `modules/storage/`: provides the single drawer-backed UTXO storage implementation.
 
 Workspace contract `version = "0.1.0"` per `Cargo.toml`; per-contract `Cargo.toml`s declare `version = "0.0.0"`. The workspace version is the one referenced by the `auto-tag.yml` workflow on push to `main`, which auto-creates `vX.Y.Z` git tags whenever `Cargo.toml` changes.
