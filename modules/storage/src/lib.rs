@@ -1,6 +1,9 @@
 #![no_std]
 
-use soroban_sdk::{contracttype, panic_with_error, Bytes, BytesN, Env, Map};
+mod cache;
+
+use cache::DrawerCache;
+use soroban_sdk::{contracttype, panic_with_error, Bytes, BytesN, Env};
 
 pub use moonlight_errors::Error;
 
@@ -43,40 +46,6 @@ struct DrawerState {
 enum DrawerDataKey {
     Drawer(DrawerKey),
     State,
-}
-
-struct DrawerCache {
-    drawers: Map<u32, Bytes>,
-    state: Option<DrawerState>,
-    state_dirty: bool,
-    dirty_drawers: Map<u32, bool>,
-}
-
-impl DrawerCache {
-    fn new(e: &Env) -> Self {
-        Self {
-            drawers: Map::new(e),
-            state: None,
-            state_dirty: false,
-            dirty_drawers: Map::new(e),
-        }
-    }
-
-    fn commit(&self, e: &Env) {
-        if self.state_dirty {
-            if let Some(ref state) = self.state {
-                e.storage().persistent().set(&DrawerDataKey::State, state);
-            }
-        }
-
-        for (drawer_id, _) in self.dirty_drawers.iter() {
-            if let Some(bitmap) = self.drawers.get(drawer_id) {
-                e.storage()
-                    .persistent()
-                    .set(&Store::drawer_key(drawer_id), &bitmap);
-            }
-        }
-    }
 }
 
 /// Drawer-backed UTXO storage.
