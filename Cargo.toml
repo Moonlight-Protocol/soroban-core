@@ -30,6 +30,7 @@ wee_alloc = "0.4"
 
 moonlight-utxo-core = { path = "modules/utxo-core" }
 moonlight-auth = { path = "modules/auth" }
+moonlight-errors = { path = "modules/errors" }
 moonlight-helpers = { path = "modules/helpers" }
 moonlight-primitives = { path = "modules/primitives" }
 moonlight-storage = { path = "modules/storage" }
