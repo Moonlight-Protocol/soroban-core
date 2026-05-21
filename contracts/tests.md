@@ -25,7 +25,7 @@ modules/utxo-core/src/tests/
 
 modules/auth/src/test.rs  — provider/UTXO auth + signature verification
 
-modules/helpers/src/tests.rs — strkey/Address roundtrip
+modules/helpers/src/tests.rs — address payload roundtrip
 ```
 
 All tests are Rust unit tests run via `cargo test` from the workspace root. There is no separate integration-test crate. The `local-dev` repo's Docker-based E2E suites exercise the deployed-contract surface; those are described in §4.
@@ -177,15 +177,11 @@ Tests that a bundle with `Condition::ExtDeposit`, `ExtWithdraw`, and `ExtIntegra
 
 Asserts `address_from_ed25519_pk_bytes` and `address_to_ed25519_pk_bytes` are mutually inverse for a hardcoded 32-byte key.
 
-#### `tests.rs::address_string_roundtrip_works`
-
-Same, starting from a `Strkey` string.
-
 #### `tests.rs::start_from_address_string`
 
 Same, starting from a known `G…` Stellar address string.
 
-These are correctness checks for the strkey conversion path used by `require_provider` to look up provider addresses.
+These are correctness checks for the address payload conversion path used by `require_provider` to look up provider addresses.
 
 ---
 

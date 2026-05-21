@@ -11,6 +11,8 @@ pub const UTXO_ERROR_RANGE_START: u32 = 2_000;
 pub const UTXO_ERROR_RANGE_END: u32 = 2_099;
 pub const CHANNEL_ERROR_RANGE_START: u32 = 3_000;
 pub const CHANNEL_ERROR_RANGE_END: u32 = 3_099;
+pub const HELPER_ERROR_RANGE_START: u32 = 4_000;
+pub const HELPER_ERROR_RANGE_END: u32 = 4_099;
 
 #[contracterror]
 #[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
@@ -47,6 +49,10 @@ pub enum MoonlightError {
     ConflictingConditionsForAccount = 3_002,
     AmountOverflow = 3_003,
     BundleHasConflictingConditions = 3_004,
+
+    // Helper errors: 4000-4099.
+    NotEd25519AccountAddress = 4_000,
+    UnsupportedAddressPayload = 4_001,
 }
 
 pub use MoonlightError as Error;

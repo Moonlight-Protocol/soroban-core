@@ -9,8 +9,9 @@ use p256::{
 use rand::rngs::OsRng;
 use rand_core::OsRng as CoreOsRng;
 
-use soroban_sdk::{contracttype, crypto::Hash, Address, Bytes, BytesN, Env, TryFromVal};
-use stellar_strkey::{ed25519, Strkey};
+use soroban_sdk::{contracttype, crypto::Hash, Address, BytesN, Env, TryFromVal};
+
+use crate::parser::address_from_ed25519_pk_bytes;
 
 #[derive(Clone)]
 #[contracttype]
@@ -26,9 +27,22 @@ pub struct Ed25519Account {
 }
 
 impl Ed25519Account {
-    pub fn from_keys(e: &Env, _public: &[u8; 32], secret: &[u8; 32]) -> Ed25519Account {
+    pub fn from_keys(e: &Env, public: &[u8; 32], secret: &[u8; 32]) -> Ed25519Account {
         let signing_key = NativeSigningKey::from_bytes(secret);
-        Self::from_signing_key(e, signing_key)
+        let verifying_key = signing_key.verifying_key().to_bytes();
+        assert_eq!(
+            &verifying_key, public,
+            "public key does not match secret key"
+        );
+
+        let public_key = BytesN::<32>::from_array(&e, public);
+        let address = address_from_ed25519_pk_bytes(e, &public_key);
+
+        Ed25519Account {
+            public_key,
+            signing_key,
+            address,
+        }
     }
 
     pub fn generate(e: &Env) -> Ed25519Account {
@@ -39,12 +53,8 @@ impl Ed25519Account {
 
     pub fn from_signing_key(e: &Env, signing_key: NativeSigningKey) -> Ed25519Account {
         let verifying_key = signing_key.verifying_key();
-        let public_key_str = Strkey::PublicKeyEd25519(ed25519::PublicKey(verifying_key.to_bytes()));
-
-        let address_bytes = Bytes::from_slice(&e, public_key_str.to_string().as_bytes());
-        let address = Address::from_string_bytes(&address_bytes);
-
         let public_key = BytesN::<32>::from_array(&e, &verifying_key.to_bytes());
+        let address = address_from_ed25519_pk_bytes(e, &public_key);
 
         Ed25519Account {
             public_key,

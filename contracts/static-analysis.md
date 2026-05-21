@@ -148,7 +148,7 @@ These flag functions that may panic without a `# Panics` rustdoc section. Each o
 
 | File | Function | Reason for panic |
 |---|---|---|
-| `modules/helpers/src/parser.rs` | `address_to_ed25519_pk_bytes` | Invalid UTF-8, invalid Strkey, non-ed25519 address (testutils-only path). |
+| `modules/helpers/src/parser.rs` | `address_to_ed25519_pk_bytes` | Non-ed25519 address payload / unsupported address payload. |
 | `modules/storage/src/lib.rs` | `Store::apply`, `Store::create`, `Store::spend`, `alloc_slot_and_rotate_if_needed` | Closure panic / already-exists / already-spent / not-exists / drawer-id u32 overflow (last is unreachable in practice). |
 | `modules/utxo-core/src/core.rs` | `process_bundle`, `verify_utxo_not_exists`, `verify_utxo_unspent`, `auth` | Bundle-balance / UTXO-state / missing-auth-config reverts. |
 | `modules/auth/src/core.rs` | `register_provider`, `deregister_provider`, `require_provider` | Provider-already / not-registered / signature checks. |

@@ -54,3 +54,13 @@ fn keeps_channel_errors_in_their_reserved_range() {
         assert!((3_000..=3_099).contains(&code));
     }
 }
+
+#[test]
+fn keeps_helper_errors_in_their_reserved_range() {
+    for code in [
+        Error::NotEd25519AccountAddress.code(),
+        Error::UnsupportedAddressPayload.code(),
+    ] {
+        assert!((4_000..=4_099).contains(&code));
+    }
+}
