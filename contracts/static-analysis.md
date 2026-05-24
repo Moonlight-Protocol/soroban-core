@@ -19,8 +19,8 @@ The audit scope is the two contracts in `contracts/` plus the `modules/` they co
 |---|---|---|
 | `rustc` | 1.94.0 (4a4ef493e 2026-03-02) | Toolchain |
 | `cargo` | 1.94.0 (85eff7c80 2026-01-15) | Build / test driver |
-| `cargo-audit` | 0.22.1 | RustSec advisory scan over `Cargo.lock` |
-| `cargo-clippy` | 0.1.94 (4a4ef493e3 2026-03-02) | Static lint pass with the `pedantic` group enabled |
+| `cargo-audit` | 0.22.1 (historical run; not installed in current local runtime) | RustSec advisory scan over `Cargo.lock` |
+| `cargo-clippy` | 0.1.94 (4a4ef493e3 2026-03-02; historical run) | Static lint pass with the `pedantic` group enabled |
 
 The `stellar-cli` itself is also part of the build pipeline (`stellar contract build`) but does not currently expose an independent static-analysis surface beyond what `cargo` already provides; we did not invoke it as a static-analysis tool.
 
