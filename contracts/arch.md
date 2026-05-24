@@ -384,6 +384,7 @@ Auditors may reasonably assume the following are part of the audit; they are not
 - **The `contracts/token/` test token**: a workspace-internal token used only in `privacy-channel` integration tests. Not deployed.
 - **OpenZeppelin Stellar crates** (`stellar-access` and `stellar-contract-utils`): provide Ownable admin transfer and upgrade helpers. Auditors should treat these as part of the trusted base; deeper review of OpenZeppelin internals is a separate scope.
 - **Soroban SDK** (`soroban-sdk =25.3.0`): the workspace uses the public crates.io SDK rather than the previous fork. The OpenZeppelin crates enable SDK spec-shaking support, so contract builds should use `stellar contract build` with Stellar CLI 25.2 or newer.
+- **Soroban SDK `hazmat-address` feature**: `modules/helpers` intentionally uses the SDK's low-level address payload APIs to convert between raw Ed25519 provider keys and Stellar account addresses. This is protocol-required glue: avoiding the feature would mean rebuilding the same payload conversion ourselves or reintroducing another dependency. The risk is operational rather than conceptual: future SDK upgrades must re-check the exact payload semantics because the feature is explicitly low-level and easy to misuse outside this protocol-specific path.
 - **Stellar Asset Contract** behavior: the channel trusts its configured asset SAC to enforce its own transfer semantics. Custom non-SAC assets are not a tested path.
 
 ---
@@ -407,4 +408,4 @@ Per-contract Cargo features in use:
 - `modules/utxo-core/`: default features = `["no-utxo-events", "no-bundle-events"]`.
 - `modules/storage/`: provides the single drawer-backed UTXO storage implementation.
 
-Workspace contract `version = "0.1.0"` per `Cargo.toml`; per-contract `Cargo.toml`s declare `version = "0.0.0"`. The workspace version is the one referenced by the `auto-tag.yml` workflow on push to `main`, which auto-creates `vX.Y.Z` git tags whenever `Cargo.toml` changes.
+Workspace contract `version = "0.2.0"` per `Cargo.toml`; per-contract `Cargo.toml`s declare `version = "0.0.0"`. The workspace version is the one referenced by the `auto-tag.yml` workflow on push to `main`, which auto-creates `vX.Y.Z` git tags whenever `Cargo.toml` changes.

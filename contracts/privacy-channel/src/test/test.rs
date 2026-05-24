@@ -66,6 +66,122 @@ pub fn create_contracts(
 }
 
 #[test]
+fn test_admin_transfer_keeps_current_admin_until_acceptance() {
+    let e = Env::default();
+    let (channel, _, _, admin) = create_contracts(&e);
+    let pending_admin = Address::generate(&e);
+    let next_admin = Address::generate(&e);
+
+    channel
+        .mock_auths(&[MockAuth {
+            address: &admin,
+            invoke: &MockAuthInvoke {
+                contract: &channel.address,
+                fn_name: "set_admin",
+                args: (&pending_admin,).into_val(&e),
+                sub_invokes: &[],
+            },
+        }])
+        .set_admin(&pending_admin);
+
+    assert_eq!(channel.admin(), admin.clone());
+
+    let pending_admin_set_admin = channel
+        .mock_auths(&[MockAuth {
+            address: &pending_admin,
+            invoke: &MockAuthInvoke {
+                contract: &channel.address,
+                fn_name: "set_admin",
+                args: (&next_admin,).into_val(&e),
+                sub_invokes: &[],
+            },
+        }])
+        .try_set_admin(&next_admin);
+
+    assert!(pending_admin_set_admin.is_err());
+    assert_eq!(channel.admin(), admin);
+}
+
+#[test]
+fn test_admin_transfer_requires_pending_admin_to_accept() {
+    let e = Env::default();
+    let (channel, _, _, admin) = create_contracts(&e);
+    let pending_admin = Address::generate(&e);
+    let non_pending_admin = Address::generate(&e);
+    let next_admin = Address::generate(&e);
+
+    channel
+        .mock_auths(&[MockAuth {
+            address: &admin,
+            invoke: &MockAuthInvoke {
+                contract: &channel.address,
+                fn_name: "set_admin",
+                args: (&pending_admin,).into_val(&e),
+                sub_invokes: &[],
+            },
+        }])
+        .set_admin(&pending_admin);
+
+    let non_pending_accept = channel
+        .mock_auths(&[MockAuth {
+            address: &non_pending_admin,
+            invoke: &MockAuthInvoke {
+                contract: &channel.address,
+                fn_name: "accept_admin",
+                args: ().into_val(&e),
+                sub_invokes: &[],
+            },
+        }])
+        .try_accept_admin();
+
+    assert!(non_pending_accept.is_err());
+    assert_eq!(channel.admin(), admin.clone());
+
+    channel
+        .mock_auths(&[MockAuth {
+            address: &pending_admin,
+            invoke: &MockAuthInvoke {
+                contract: &channel.address,
+                fn_name: "accept_admin",
+                args: ().into_val(&e),
+                sub_invokes: &[],
+            },
+        }])
+        .accept_admin();
+
+    assert_eq!(channel.admin(), pending_admin.clone());
+
+    let old_admin_set_admin = channel
+        .mock_auths(&[MockAuth {
+            address: &admin,
+            invoke: &MockAuthInvoke {
+                contract: &channel.address,
+                fn_name: "set_admin",
+                args: (&next_admin,).into_val(&e),
+                sub_invokes: &[],
+            },
+        }])
+        .try_set_admin(&next_admin);
+
+    assert!(old_admin_set_admin.is_err());
+    assert_eq!(channel.admin(), pending_admin.clone());
+
+    channel
+        .mock_auths(&[MockAuth {
+            address: &pending_admin,
+            invoke: &MockAuthInvoke {
+                contract: &channel.address,
+                fn_name: "set_admin",
+                args: (&next_admin,).into_val(&e),
+                sub_invokes: &[],
+            },
+        }])
+        .set_admin(&next_admin);
+
+    assert_eq!(channel.admin(), pending_admin);
+}
+
+#[test]
 fn test_single_deposit_with_auth() {
     let e = get_env_with_g_accounts();
     let (provider_a, john, _, _, _) = get_snapshot_g_accounts(&e);

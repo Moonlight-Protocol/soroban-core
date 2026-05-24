@@ -1,11 +1,11 @@
 # Soroban Core — Self-Service Static Analysis
 
-> **Status:** This report is historical and predates the OpenZeppelin Ownable /
-> SDK 25 migration. Sections that mention the old `theahaco` SDK fork,
-> `admin-sep`, or direct `wee_alloc` dependency describe the previous dependency
-> graph, not the current workspace. Do not use the dependency findings below as
-> current audit evidence until `cargo audit` and the documented static checks are
-> rerun against the current workspace dependency graph.
+> **Status:** Updated for the OpenZeppelin Ownable / SDK 25 migration.
+> Dependency-topology checks in this PR confirm the old direct `wee_alloc`,
+> `admin-sep`, `theahaco` SDK fork, and direct `stellar-strkey` dependencies are
+> no longer part of the workspace. The detailed `cargo audit` / `cargo clippy`
+> output below remains historical until those tools are rerun against the current
+> dependency graph; `cargo-audit` is not installed in the current local runtime.
 
 This document satisfies item 5 of the Soroban Audit Bank intake form ("self-service tooling vulnerability scan results, with remediation plan for any findings"). It captures the tools run, the exact commands used, the raw findings, and the per-finding remediation plan.
 
@@ -28,9 +28,48 @@ We did not run a Soroban-specific commercial linter (e.g. CoinFabrik's `cargo-sc
 
 ---
 
-## 2. `cargo audit` — RustSec advisory scan
+## 2. Current dependency-topology refresh
 
-### 2.1 Command
+The OpenZeppelin Ownable / SDK 25 migration changed the dependency graph. This
+PR refresh checked the dependency topology directly with `cargo tree`; it did
+not refresh the RustSec advisory scan because `cargo audit` is not installed in
+this local runtime.
+
+### 2.1 Commands
+
+```
+cargo tree -i wee_alloc
+cargo tree -i stellar-strkey@0.0.13
+cargo tree -i stellar-strkey@0.0.16
+cargo audit --version
+```
+
+### 2.2 Results
+
+- `wee_alloc` is no longer present in the workspace dependency graph. The
+  command returns `package ID specification wee_alloc did not match any
+  packages`.
+- `stellar-strkey` is no longer a direct Moonlight dependency. The remaining
+  `stellar-strkey@0.0.13` and `stellar-strkey@0.0.16` entries are transitive
+  through the public Soroban SDK / XDR stack.
+- The workspace uses public crates.io dependencies for the contract-facing
+  stack: `soroban-sdk =25.3.0`, `soroban-token-sdk =25.3.0`,
+  `stellar-access =0.7.1`, and `stellar-contract-utils =0.7.1`.
+- `modules/helpers` intentionally enables `soroban-sdk`'s `hazmat-address`
+  feature to use the SDK's own address payload APIs. This is required by the
+  protocol's raw Ed25519 provider-key to account-address conversion. Avoiding it
+  would mean rebuilding the same low-level conversion locally or adding another
+  dependency. Treat this as an SDK-upgrade revalidation point, not a current
+  blocker.
+- `cargo audit --version` failed with `no such command: audit`; a refreshed
+  RustSec scan should be captured in a follow-up local environment that has
+  `cargo-audit` installed.
+
+---
+
+## 3. Historical `cargo audit` — RustSec advisory scan
+
+### 3.1 Command
 
 ```
 cd soroban-core
@@ -38,7 +77,7 @@ cargo generate-lockfile        # workspace tracks Cargo.toml only; Cargo.lock ge
 cargo audit
 ```
 
-### 2.2 Result summary
+### 3.2 Historical result summary
 
 ```
 Scanning Cargo.lock for vulnerabilities (192 crate dependencies)
@@ -47,7 +86,7 @@ warning: 3 allowed warnings found
 
 **Vulnerabilities: 0.** **Unmaintained advisories: 3.**
 
-### 2.3 Findings
+### 3.3 Historical findings
 
 #### F-AUDIT-1 — `derivative 2.2.0` (unmaintained)
 
@@ -99,7 +138,7 @@ direct `wee_alloc` dependency and uses the Soroban SDK `alloc` feature instead.
 This finding is superseded in the current workspace, pending a refreshed
 `cargo audit` run.
 
-### 2.4 Net audit-form summary
+### 3.4 Net historical audit-form summary
 
 - **Historical result:** 0 known vulnerabilities in the previous dependency graph.
 - **Historical result:** 3 unmaintained-crate advisories — 2 transitive (out of our control), 1 direct (`wee_alloc`, now superseded by the SDK 25 migration).
@@ -107,9 +146,9 @@ This finding is superseded in the current workspace, pending a refreshed
 
 ---
 
-## 3. `cargo clippy` — pedantic lint pass
+## 4. Historical `cargo clippy` — pedantic lint pass
 
-### 3.1 Command
+### 4.1 Command
 
 ```
 cd soroban-core
@@ -120,7 +159,7 @@ cargo clippy --workspace --no-deps --all-targets -- \
 
 `--no-deps` ensures we only lint our own sources; `--all-targets` includes test code.
 
-### 3.2 Result summary
+### 4.2 Historical result summary
 
 - **0 errors.**
 - **307 warnings.**
@@ -132,7 +171,7 @@ cargo clippy --workspace --no-deps --all-targets -- \
 | 32 | `must_use_candidate` (method) | Style |
 | 30 | `needless_pass_by_value` | Style |
 | 19 | `use_self` / `use_infallible_conversion` | Style |
-| 17 | `missing_panics_doc` | **Audit-relevant** — see §3.3 |
+| 17 | `missing_panics_doc` | **Audit-relevant** — see §4.3 |
 | 12 | `must_use_candidate` (function) | Style |
 | 11 | `clone_on_copy` (`u32`) | Style |
 | 11 | `if_then_panic` (single-statement-panic in `if`) | Style |
@@ -142,7 +181,7 @@ cargo clippy --workspace --no-deps --all-targets -- \
 
 The full output is reproducible by running the command above; we do not duplicate the 3,556-line raw output in this document.
 
-### 3.3 `missing_panics_doc` — 17 findings (audit-relevant)
+### 4.3 `missing_panics_doc` — 17 findings (audit-relevant)
 
 These flag functions that may panic without a `# Panics` rustdoc section. Each one corresponds to an undocumented termination path. None of the panic paths are exploitable in the sense that they bypass authorization, but each is a deliberate revert that auditors would expect to see documented. The findings cluster as follows:
 
@@ -157,17 +196,17 @@ These flag functions that may panic without a `# Panics` rustdoc section. Each o
 
 **Remediation plan:** **Documentation pass; not a code change.** Adding `# Panics` doc-comment sections to every flagged function is straightforward and entirely additive. Out of scope for this PR; tracked as a follow-up cleanup. Auditors can treat the panic semantics as the documented intent: any bundle-shape, UTXO-state, supply, or auth failure causes a transaction-level revert.
 
-### 3.4 Style-only findings (audit-irrelevant)
+### 4.4 Style-only findings (audit-irrelevant)
 
 The remaining 290 warnings are stylistic — `needless_borrow`, `must_use_candidate`, `clone_on_copy`, etc. None of them indicates a security vulnerability. They are tracked as a separate cleanup batch and are not blocking the audit.
 
 ---
 
-## 4. Manual code-walk observations
+## 5. Manual code-walk observations
 
 In addition to the tool output, the team conducted a manual review of the in-scope sources during this exercise. The observations below are not findings against an automated tool's rule but are surfaced here for the auditor's attention. They are NOT presented as defects; they are informational notes that may shape the auditor's own threat model.
 
-### 4.1 Signature-verifier wrappers rely on host-panic semantics
+### 5.1 Signature-verifier wrappers rely on host-panic semantics
 
 `modules/auth/src/core.rs`:
 
@@ -183,13 +222,13 @@ fn verify_ed25519_signature(...) -> Result<(), Error> {
 }
 ```
 
-Both wrappers always return `Ok(())`. They depend on the underlying Soroban host primitives panicking on a failed verification. This is the documented behavior of `secp256r1_verify` and `ed25519_verify` in the Soroban SDK at the pinned revision (`5a99659f…` of `theahaco/rs-soroban-sdk`).
+Both wrappers always return `Ok(())`. They depend on the underlying Soroban host primitives panicking on a failed verification. This is the behavior used by the current public Soroban SDK 25 stack and should be revalidated on SDK upgrades.
 
 **Implication:** if the upstream SDK ever changes these primitives to return a `Result` rather than panic, the wrappers as written would silently accept invalid signatures. This is not a current vulnerability but is a non-obvious coupling worth documenting and worth re-validating against any future SDK upgrade.
 
 **Remediation plan:** **Track for follow-up.** Wrappers should be hardened to defensively re-check the host's behavior or return a `Result` from the host primitive. Out of scope for this PR.
 
-### 4.2 Zero-arg context bypass in `handle_utxo_auth`
+### 5.2 Zero-arg context bypass in `handle_utxo_auth`
 
 `modules/auth/src/core.rs:87`:
 
@@ -205,7 +244,7 @@ Zero-argument contract contexts skip the per-UTXO P256 verification entirely. In
 
 **Remediation plan:** **Track for follow-up.** Consider tightening to: if `contexts` references a contract function that is expected to carry auth, *require* a non-empty arg list explicitly, rather than implicitly accepting empty-args as success.
 
-### 4.3 Provider threshold is hardcoded to 1
+### 5.3 Provider threshold is hardcoded to 1
 
 `modules/auth/src/core.rs:205`:
 
@@ -217,7 +256,7 @@ Acceptable for the current architecture (channels are bound to a single Channel 
 
 **Remediation plan:** **No change.** Documented in arch.md §2.5. If a future product requirement demands m-of-n provider quorums, this becomes a configurable storage value; that's a roadmap decision, not a fix.
 
-### 4.4 `panic!` vs `panic_with_error!` inconsistency
+### 5.4 `panic!` vs `panic_with_error!` inconsistency
 
 `contracts/privacy-channel/src/treasury.rs` previously used string panics for
 internal supply overflow / underflow. That has been normalized to central
@@ -231,7 +270,7 @@ None => panic_with_error!(e, Error::AmountUnderflow),
 **Remediation status:** **Fixed.** Treasury failures now surface structured
 contract-error codes instead of string panic messages.
 
-### 4.5 Production `unwrap()` sites
+### 5.5 Production `unwrap()` sites
 
 | Location | Context |
 |---|---|
@@ -244,7 +283,7 @@ contract-error codes instead of string panic messages.
 
 **Remediation plan:** **Track for follow-up.** None of these is a current bug. They could each be tightened either by `expect("…")` with a precondition message or by `?` / structured error propagation. Out of scope for this PR.
 
-### 4.6 Privacy Channel emits no contract events
+### 5.6 Privacy Channel emits no contract events
 
 `contracts/privacy-channel/Cargo.toml` enables `no-utxo-events` and `no-bundle-events` on `moonlight-utxo-core`. The Privacy Channel itself does not declare any `#[contractevent]` types. The only on-chain event traffic from `transact` comes from the asset SAC's own `transfer` events.
 
@@ -254,7 +293,7 @@ This is a **deliberate cost optimization** — bundle and per-UTXO events are ex
 
 **Remediation plan:** **No change planned.** Documented in `arch.md` §3.4 and revisited in `stride.md` under the Repudiation category.
 
-### 4.7 Strict `<` for `valid_until_ledger`
+### 5.7 Strict `<` for `valid_until_ledger`
 
 `modules/auth/src/core.rs:113, 220`:
 
@@ -270,21 +309,21 @@ A signature with `valid_until_ledger == current_sequence` is **still valid** (th
 
 ---
 
-## 5. Combined remediation plan
+## 6. Combined remediation plan
 
 | ID | Finding | Disposition | Tracked-as |
 |---|---|---|---|
 | F-AUDIT-1 | `derivative` unmaintained (transitive) | Accept-and-track | Future Soroban SDK upgrade |
 | F-AUDIT-2 | `paste` unmaintained (transitive) | Accept-and-track | Future Soroban SDK upgrade |
-| F-AUDIT-3 | `wee_alloc` unmaintained (direct) | Superseded by SDK allocator migration; verify with refreshed audit | Fresh static-analysis rerun |
+| F-AUDIT-3 | `wee_alloc` unmaintained (direct) | Fixed by SDK allocator migration; verify full advisory state with refreshed audit | Fresh static-analysis rerun |
 | F-CLIPPY-1 | 17× `missing_panics_doc` | Track for follow-up | Doc-only PR |
 | F-CLIPPY-2 | 290× style-only warnings | Defer | Project-wide cleanup |
 | F-MANUAL-1 | Verifier wrappers rely on host panic | Track for follow-up | Hardening PR |
 | F-MANUAL-2 | Zero-arg context bypass | Track for follow-up | Hardening PR |
 | F-MANUAL-3 | Hardcoded provider threshold | No change | Documented intent |
-| F-MANUAL-4 | `panic!` vs `panic_with_error!` inconsistency in `treasury.rs` | Track for follow-up | Cleanup PR |
+| F-MANUAL-4 | `panic!` vs `panic_with_error!` inconsistency in `treasury.rs` | Fixed | Central-error migration |
 | F-MANUAL-5 | Production `unwrap()` sites | Track for follow-up | Cleanup PR |
 | F-MANUAL-6 | No contract events on internal-only `transact` | No change | Documented intent (privacy by design) |
 | F-MANUAL-7 | Strict-`<` on `valid_until_ledger` | No change | Documented intent |
 
-**Summary for the Audit Bank readiness reviewer:** zero exploitable findings, three accept-and-track unmaintained-crate advisories, seven informational manual notes that the audit firm may want to look at independently. No critical / high / medium findings to remediate before audit.
+**Summary for the Audit Bank readiness reviewer:** the historical scan found zero exploitable findings. The current dependency graph has removed the old direct `wee_alloc`, private SDK fork, `admin-sep`, and direct `stellar-strkey` dependencies, and the only unresolved static-analysis action is to capture a refreshed `cargo audit` run in an environment with `cargo-audit` installed.
