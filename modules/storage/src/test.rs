@@ -210,6 +210,19 @@ fn rotates_to_the_next_drawer_when_the_current_drawer_is_full() {
 
 #[test]
 #[should_panic]
+fn bitmap_byte_index_rejects_slot_outside_drawer() {
+    let e = Env::default();
+    let contract_id = storage_contract(&e);
+
+    in_contract(&e, &contract_id, || {
+        Store::apply(&e, |store| {
+            store.bitmap_byte_index(Store::SLOTS_PER_DRAWER);
+        });
+    });
+}
+
+#[test]
+#[should_panic]
 fn balance_rejects_utxo_metadata_with_slot_outside_drawer() {
     let e = Env::default();
     let contract_id = storage_contract(&e);
