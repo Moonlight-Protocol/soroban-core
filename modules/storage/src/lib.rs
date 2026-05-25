@@ -64,8 +64,8 @@ impl Store {
     // drawers do not pay the full 64 KiB allocation cost upfront.
     const SLOTS_PER_DRAWER: u32 = 524_288;
 
-    // One bitmap byte tracks 8 slots, so 524,288 slots require up to 65,536 bytes.
-    const BITMAP_BYTES: u32 = Self::SLOTS_PER_DRAWER / 8;
+    // One bitmap byte tracks 8 slots, rounded up if the drawer size changes.
+    const BITMAP_BYTES: u32 = (Self::SLOTS_PER_DRAWER + 7) / 8;
 
     /// Runs UTXO storage operations in a scoped drawer cache.
     ///
@@ -104,7 +104,7 @@ impl Store {
                 slot_idx,
             }) => {
                 let bitmap = self.get_or_create_bitmap(drawer_id);
-                if Self::is_bit_set(&bitmap, slot_idx) {
+                if self.is_bit_set(&bitmap, slot_idx) {
                     amount
                 } else {
                     0
@@ -149,7 +149,7 @@ impl Store {
         );
 
         let mut bitmap = self.get_or_create_bitmap(drawer_id);
-        Self::set_bit_in_bitmap(&mut bitmap, slot_idx, true);
+        self.set_bit_in_bitmap(&mut bitmap, slot_idx, true);
         self.cache.drawers.set(drawer_id, bitmap);
         self.cache.dirty_drawers.set(drawer_id, true);
     }
@@ -169,11 +169,11 @@ impl Store {
             }) => {
                 let mut bitmap = self.get_or_create_bitmap(drawer_id);
 
-                if !Self::is_bit_set(&bitmap, slot_idx) {
+                if !self.is_bit_set(&bitmap, slot_idx) {
                     panic_with_error!(&self.env, Error::UtxoAlreadySpent);
                 }
 
-                Self::set_bit_in_bitmap(&mut bitmap, slot_idx, false);
+                self.set_bit_in_bitmap(&mut bitmap, slot_idx, false);
                 self.cache.drawers.set(drawer_id, bitmap);
                 self.cache.dirty_drawers.set(drawer_id, true);
 
@@ -265,18 +265,27 @@ impl Store {
     }
 
     #[inline(always)]
-    fn is_bit_set(bitmap: &Bytes, slot_idx: u32) -> bool {
+    fn bitmap_byte_index(&self, slot_idx: u32) -> u32 {
         let byte_i = slot_idx >> 3;
+
+        if slot_idx >= Self::SLOTS_PER_DRAWER || byte_i >= Self::BITMAP_BYTES {
+            panic_with_error!(&self.env, Error::InvalidDrawerSlot);
+        }
+
+        byte_i
+    }
+
+    #[inline(always)]
+    fn is_bit_set(&self, bitmap: &Bytes, slot_idx: u32) -> bool {
+        let byte_i = self.bitmap_byte_index(slot_idx);
         let bit_mask = 1u8 << (slot_idx & 7);
         let byte = bitmap.get(byte_i).unwrap_or(0);
         (byte & bit_mask) != 0
     }
 
     #[inline(always)]
-    fn set_bit_in_bitmap(bitmap: &mut Bytes, slot_idx: u32, val: bool) -> bool {
-        let byte_i = slot_idx >> 3;
-        debug_assert!(byte_i < Self::BITMAP_BYTES);
-
+    fn set_bit_in_bitmap(&self, bitmap: &mut Bytes, slot_idx: u32, val: bool) -> bool {
+        let byte_i = self.bitmap_byte_index(slot_idx);
         while bitmap.len() <= byte_i {
             bitmap.push_back(0u8);
         }

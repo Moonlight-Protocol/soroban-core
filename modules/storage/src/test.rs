@@ -210,6 +210,52 @@ fn rotates_to_the_next_drawer_when_the_current_drawer_is_full() {
 
 #[test]
 #[should_panic]
+fn balance_rejects_utxo_metadata_with_slot_outside_drawer() {
+    let e = Env::default();
+    let contract_id = storage_contract(&e);
+
+    in_contract(&e, &contract_id, || {
+        let key = utxo(&e, 1);
+        let uk = UTXOCoreDataKey::UTXO(hash_utxo_key(&e, &key));
+
+        e.storage().persistent().set(
+            &uk,
+            &UtxoMeta {
+                amount: 100,
+                drawer_id: 1,
+                slot_idx: Store::SLOTS_PER_DRAWER,
+            },
+        );
+
+        Store::apply(&e, |store| store.balance(&key));
+    });
+}
+
+#[test]
+#[should_panic]
+fn spend_rejects_utxo_metadata_with_slot_outside_drawer() {
+    let e = Env::default();
+    let contract_id = storage_contract(&e);
+
+    in_contract(&e, &contract_id, || {
+        let key = utxo(&e, 1);
+        let uk = UTXOCoreDataKey::UTXO(hash_utxo_key(&e, &key));
+
+        e.storage().persistent().set(
+            &uk,
+            &UtxoMeta {
+                amount: 100,
+                drawer_id: 1,
+                slot_idx: Store::SLOTS_PER_DRAWER,
+            },
+        );
+
+        Store::apply(&e, |store| store.spend(&key));
+    });
+}
+
+#[test]
+#[should_panic]
 fn create_rejects_duplicate_utxo_metadata_even_after_spend() {
     let e = Env::default();
     let contract_id = storage_contract(&e);
