@@ -1,3 +1,4 @@
+use moonlight_errors::Error as ContractError;
 use moonlight_helpers::testutils::keys::P256KeyPair;
 use moonlight_primitives::Condition;
 use soroban_sdk::{
@@ -8,7 +9,7 @@ use soroban_sdk::{
 };
 
 use crate::{
-    core::{calculate_auth_requirements, Error as ContractError, UTXOOperation},
+    core::{calculate_auth_requirements, UTXOOperation},
     testutils::contract::create_contract_with_mocked_auth,
 };
 
@@ -34,7 +35,7 @@ fn test_mint_and_burn() {
     assert_eq!(
         expected_error_exists.err(),
         Some(Ok(Error::from_contract_error(
-            ContractError::UTXOAlreadyExists as u32
+            ContractError::UtxoAlreadyExists as u32
         )))
     );
     assert_eq!(client.utxo_balance(&utxo.public_key.clone()), 0_i128);
@@ -44,7 +45,7 @@ fn test_mint_and_burn() {
     assert_eq!(
         expected_error_spent.err(),
         Some(Ok(Error::from_contract_error(
-            ContractError::UTXOAlreadySpent as u32
+            ContractError::UtxoAlreadySpent as u32
         )))
     );
     assert_eq!(client.utxo_balance(&utxo.public_key.clone()), 0_i128);
@@ -55,7 +56,7 @@ fn test_mint_and_burn() {
     assert_eq!(
         expected_error_not_exists.err(),
         Some(Ok(Error::from_contract_error(
-            ContractError::UTXODoesntExist as u32
+            ContractError::UtxoDoesNotExist as u32
         )))
     );
 
@@ -130,7 +131,7 @@ fn test_transfer() {
     assert_eq!(
         expected_error_repeating_create.err(),
         Some(Ok(Error::from_contract_error(
-            ContractError::RepeatedCreateUTXO as u32
+            ContractError::RepeatedCreateUtxo as u32
         )))
     );
 
@@ -153,7 +154,7 @@ fn test_transfer() {
     assert_eq!(
         expected_error_repeating_spend.err(),
         Some(Ok(Error::from_contract_error(
-            ContractError::RepeatedSpendUTXO as u32
+            ContractError::RepeatedSpendUtxo as u32
         )))
     );
 

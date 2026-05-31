@@ -24,6 +24,138 @@ pub fn create_contract(e: &Env) -> (ChannelAuthContractClient<'_>, Address) {
 }
 
 #[test]
+fn test_admin_transfer_keeps_current_admin_in_control_until_acceptance() {
+    let e = Env::default();
+    let (auth_client, admin) = create_contract(&e);
+    let pending_admin = Address::generate(&e);
+    let provider = Address::generate(&e);
+    let blocked_provider = Address::generate(&e);
+
+    auth_client
+        .mock_auths(&[MockAuth {
+            address: &admin,
+            invoke: &MockAuthInvoke {
+                contract: &auth_client.address,
+                fn_name: "set_admin",
+                args: (&pending_admin,).into_val(&e),
+                sub_invokes: &[],
+            },
+        }])
+        .set_admin(&pending_admin);
+
+    assert_eq!(auth_client.admin(), admin.clone());
+
+    auth_client
+        .mock_auths(&[MockAuth {
+            address: &admin,
+            invoke: &MockAuthInvoke {
+                contract: &auth_client.address,
+                fn_name: "add_provider",
+                args: (&provider,).into_val(&e),
+                sub_invokes: &[],
+            },
+        }])
+        .add_provider(&provider);
+
+    assert!(auth_client.is_provider(&provider));
+
+    let pending_admin_add_provider = auth_client
+        .mock_auths(&[MockAuth {
+            address: &pending_admin,
+            invoke: &MockAuthInvoke {
+                contract: &auth_client.address,
+                fn_name: "add_provider",
+                args: (&blocked_provider,).into_val(&e),
+                sub_invokes: &[],
+            },
+        }])
+        .try_add_provider(&blocked_provider);
+
+    assert!(pending_admin_add_provider.is_err());
+    assert!(!auth_client.is_provider(&blocked_provider));
+}
+
+#[test]
+fn test_admin_transfer_requires_pending_admin_to_accept() {
+    let e = Env::default();
+    let (auth_client, admin) = create_contract(&e);
+    let pending_admin = Address::generate(&e);
+    let non_pending_admin = Address::generate(&e);
+    let old_admin_provider = Address::generate(&e);
+    let new_admin_provider = Address::generate(&e);
+
+    auth_client
+        .mock_auths(&[MockAuth {
+            address: &admin,
+            invoke: &MockAuthInvoke {
+                contract: &auth_client.address,
+                fn_name: "set_admin",
+                args: (&pending_admin,).into_val(&e),
+                sub_invokes: &[],
+            },
+        }])
+        .set_admin(&pending_admin);
+
+    let non_pending_accept = auth_client
+        .mock_auths(&[MockAuth {
+            address: &non_pending_admin,
+            invoke: &MockAuthInvoke {
+                contract: &auth_client.address,
+                fn_name: "accept_admin",
+                args: ().into_val(&e),
+                sub_invokes: &[],
+            },
+        }])
+        .try_accept_admin();
+
+    assert!(non_pending_accept.is_err());
+    assert_eq!(auth_client.admin(), admin.clone());
+
+    auth_client
+        .mock_auths(&[MockAuth {
+            address: &pending_admin,
+            invoke: &MockAuthInvoke {
+                contract: &auth_client.address,
+                fn_name: "accept_admin",
+                args: ().into_val(&e),
+                sub_invokes: &[],
+            },
+        }])
+        .accept_admin();
+
+    assert_eq!(auth_client.admin(), pending_admin.clone());
+
+    let old_admin_add_provider = auth_client
+        .mock_auths(&[MockAuth {
+            address: &admin,
+            invoke: &MockAuthInvoke {
+                contract: &auth_client.address,
+                fn_name: "add_provider",
+                args: (&old_admin_provider,).into_val(&e),
+                sub_invokes: &[],
+            },
+        }])
+        .try_add_provider(&old_admin_provider);
+
+    assert!(old_admin_add_provider.is_err());
+    assert!(!auth_client.is_provider(&old_admin_provider));
+
+    auth_client
+        .mock_auths(&[MockAuth {
+            address: &pending_admin,
+            invoke: &MockAuthInvoke {
+                contract: &auth_client.address,
+                fn_name: "add_provider",
+                args: (&new_admin_provider,).into_val(&e),
+                sub_invokes: &[],
+            },
+        }])
+        .add_provider(&new_admin_provider);
+
+    assert!(auth_client.is_provider(&new_admin_provider));
+}
+
+#[test]
 fn test_auth_module() {
     let e = Env::default();
 

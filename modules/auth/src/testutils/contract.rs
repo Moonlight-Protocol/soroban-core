@@ -11,14 +11,16 @@ use crate::core::{Error as AuthError, ProviderAuthorizable, UtxoAuthorizable};
 #[contract]
 pub struct AuthModuleTestContract;
 
-#[contractimpl]
 impl UtxoAuthorizable for AuthModuleTestContract {}
 
-#[contractimpl]
 impl ProviderAuthorizable for AuthModuleTestContract {}
 
 #[contractimpl]
 impl AuthModuleTestContract {
+    pub fn is_provider(e: &Env, provider: Address) -> bool {
+        <Self as ProviderAuthorizable>::is_provider(e, provider)
+    }
+
     pub fn add_provider(e: &Env, provider: Address) {
         Self::register_provider(e, provider);
     }

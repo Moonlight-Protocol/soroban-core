@@ -1,7 +1,7 @@
-use admin_sep::{Administratable, Upgradable};
-
 use moonlight_utxo_core::core::UtxoHandlerTrait;
 use soroban_sdk::{contract, contractimpl, Address, BytesN, Env, Vec};
+use stellar_access::ownable;
+use stellar_contract_utils::upgradeable;
 
 use crate::{
     storage::{read_asset, read_supply, write_asset_unchecked},
@@ -11,22 +11,44 @@ use crate::{
 #[contract]
 pub struct PrivacyChannelContract;
 
-#[contractimpl]
-impl Administratable for PrivacyChannelContract {}
-
-#[contractimpl]
-impl Upgradable for PrivacyChannelContract {}
-
-#[contractimpl]
 impl UtxoHandlerTrait for PrivacyChannelContract {}
 
 #[contractimpl]
 impl PrivacyChannelContract {
     pub fn __constructor(e: &Env, admin: Address, auth_contract: Address, asset: Address) {
-        Self::set_admin(e, &admin);
-        Self::require_admin(e);
-        Self::set_auth(e, &auth_contract);
+        ownable::set_owner(e, &admin);
+        ownable::enforce_owner_auth(e);
+        <Self as UtxoHandlerTrait>::set_auth(e, &auth_contract);
         write_asset_unchecked(e, asset);
+    }
+
+    pub fn admin(e: &Env) -> Address {
+        ownable::get_owner(e).unwrap()
+    }
+
+    pub fn set_admin(e: &Env, new_admin: Address) {
+        ownable::transfer_ownership(e, &new_admin, e.ledger().max_live_until_ledger());
+    }
+
+    pub fn accept_admin(e: &Env) {
+        ownable::accept_ownership(e);
+    }
+
+    pub fn upgrade(e: &Env, wasm_hash: BytesN<32>) {
+        ownable::enforce_owner_auth(e);
+        upgradeable::upgrade(e, &wasm_hash);
+    }
+
+    pub fn auth(e: &Env) -> Address {
+        <Self as UtxoHandlerTrait>::auth(e)
+    }
+
+    pub fn utxo_balance(e: &Env, utxo: BytesN<65>) -> i128 {
+        <Self as UtxoHandlerTrait>::utxo_balance(e, utxo)
+    }
+
+    pub fn utxo_balances(e: &Env, utxos: Vec<BytesN<65>>) -> Vec<i128> {
+        <Self as UtxoHandlerTrait>::utxo_balances(e, utxos)
     }
 
     pub fn asset(e: Env) -> Address {

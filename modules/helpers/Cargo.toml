@@ -12,8 +12,8 @@ crate-type = ["rlib"]
 doctest = false
 
 [dependencies]
-soroban-sdk = {workspace = true}
-stellar-strkey = { version = "0.0.13" }
+moonlight-errors = { workspace = true }
+soroban-sdk = {workspace = true, features = ["hazmat-address"]}
 
 ed25519-dalek = { version = "2", optional = true }
 rand = { version = "0.8", optional = true }

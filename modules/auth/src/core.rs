@@ -1,29 +1,12 @@
+pub use moonlight_errors::Error;
 use moonlight_helpers::parser::address_from_ed25519_pk_bytes;
 use moonlight_primitives::{
     hash_payload, AuthPayload, AuthRequirements, Condition, Signature, Signatures, SignerKey,
 };
 use soroban_sdk::{
-    auth::Context, contracterror, contracttrait, contracttype, crypto::Hash, Address, Bytes,
-    BytesN, Env, Map, TryIntoVal, Vec,
+    assert_with_error, auth::Context, contracttype, crypto::Hash, Address, Bytes, BytesN, Env, Map,
+    TryIntoVal, Vec,
 };
-
-#[contracterror]
-#[derive(Copy, Clone, Eq, PartialEq, Debug)]
-#[repr(u32)]
-pub enum Error {
-    BadArg = 3,
-    UnexpectedVariant = 4,
-    MissingSignature = 5,
-    ExtraSignature = 6,
-    InvalidSignatureFormat = 7,
-    UnsupportedSignatureFormat = 8,
-    MismatchedContract = 9,
-    UnsupportedSigner = 10,
-    NoConditions = 11,
-    UnexpectedContext = 12,
-    SignatureExpired = 13,
-    ProviderThresholdNotMet = 14,
-}
 
 fn verify_p256_signature(
     e: &Env,
@@ -72,9 +55,7 @@ pub fn verify_signature(
     }
 }
 
-#[contracttrait]
 pub trait UtxoAuthorizable {
-    #[internal]
     fn handle_utxo_auth(
         e: &Env,
         signatures: Signatures, // provided by tx submitter in Authorization entry
@@ -146,7 +127,6 @@ pub enum ProviderDataKey {
     AuthorizedProvider(Address),
 }
 
-#[contracttrait]
 pub trait ProviderAuthorizable {
     /// Checks if the given address is a registered provider.
     ///
@@ -163,11 +143,11 @@ pub trait ProviderAuthorizable {
     ///
     /// ### Panics
     /// - Panics if the provider is already registered.
-    #[internal]
     fn register_provider(e: &Env, provider: Address) {
-        assert!(
+        assert_with_error!(
+            e,
             !Self::is_provider(&e, provider.clone()),
-            "Provider already registered"
+            Error::ProviderAlreadyRegistered
         );
 
         e.storage()
@@ -179,11 +159,11 @@ pub trait ProviderAuthorizable {
     ///
     /// ### Panics
     /// - Panics if the provider is not registered.
-    #[internal]
     fn deregister_provider(e: &Env, provider: Address) {
-        assert!(
+        assert_with_error!(
+            e,
             Self::is_provider(&e, provider.clone()),
-            "Provider not registered"
+            Error::ProviderNotRegistered
         );
 
         e.storage()
@@ -197,7 +177,6 @@ pub trait ProviderAuthorizable {
     /// ### Panics
     /// - Panics if the provider is not registered.
     /// - Panics if the transaction is not authorized by the provider.
-    #[internal]
     fn require_provider(e: &Env, payload: Hash<32>, signatures: Signatures) -> Result<(), Error> {
         let sig_map = signatures.0;
 
@@ -208,14 +187,13 @@ pub trait ProviderAuthorizable {
             if let SignerKey::Provider(pk32) = signer.clone() {
                 let provider_addr: Address = address_from_ed25519_pk_bytes(&e, &pk32);
 
-                assert!(
+                assert_with_error!(
+                    e,
                     Self::is_provider(&e, provider_addr.clone()),
-                    "Provider not registered"
+                    Error::ProviderNotRegistered
                 );
-                let (sig_variant, valid_until_ledger) = sig_map
-                    .get(signer.clone())
-                    .ok_or(Error::MissingSignature)
-                    .unwrap();
+                let (sig_variant, valid_until_ledger) =
+                    sig_map.get(signer.clone()).ok_or(Error::MissingSignature)?;
 
                 if valid_until_ledger < e.ledger().sequence() {
                     return Err(Error::SignatureExpired);

@@ -44,7 +44,7 @@ This repository contains the smart contracts. A reference implementation of the 
     ├── utxo-core/           - UTXO accounting system
     ├── auth/                - Authentication and signature verification
     ├── primitives/          - Core types (Condition, Signature, AuthPayload, etc.)
-    ├── storage/             - UTXO storage backends (simple and drawer-optimized)
+    ├── storage/             - Drawer-backed UTXO storage
     └── helpers/             - Address parsing utilities
 ```
 
@@ -98,10 +98,11 @@ Core types including:
 
 ### storage
 
-Two UTXO storage backends (compile-time selectable):
+Drawer-backed UTXO storage with scoped cache commits:
 
-- `storage-simple` - Basic persistent storage
-- `storage-drawer` - Bitmap-optimized storage for cost efficiency
+- `Store::apply` - Runs one logical group of storage operations.
+- `balance` / `create` / `spend` - Read and mutate UTXO state through the scoped store.
+- Drawer bitmaps - Pack spent/unspent flags into shared bitmap entries for cost efficiency.
 
 ## Development
 
