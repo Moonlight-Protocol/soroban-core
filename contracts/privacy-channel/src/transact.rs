@@ -7,8 +7,7 @@ use moonlight_utxo_core::core::{calculate_auth_requirements, InternalBundle};
 use soroban_sdk::{
     assert_with_error,
     auth::{ContractContext, InvokerContractAuthEntry, SubContractInvocation},
-    contracttype,
-    panic_with_error,
+    contracttype, panic_with_error,
     token::TokenClient,
     vec,
     xdr::ToXdr,
@@ -60,13 +59,14 @@ pub fn pre_process_channel_operation(
 
     verify_external_operations(&e, op.deposit.clone(), op.withdraw.clone());
 
-    // MOON-01: bind executed effects to owner-signed conditions. The balance check in
+    // MOON-01: bind owner-signed conditions to executed effects. The balance check in
     // `process_bundle` only guarantees value conservation, not *where* the value goes; without
     // this, a provider can keep `op.spend` byte-identical (owner P256 sig still verifies) and
     // redirect `op.create` / `op.withdraw` to an attacker while staying balanced. This enforces
-    // that the set of executed create/withdraw effects EXACTLY equals the set of Create/ExtWithdraw
-    // conditions signed by the spend owners (P256) and depositors (Ed25519).
-    assert_executed_effects_are_authorized(&e, &op);
+    // that every Create/ExtWithdraw condition signed by a spend owner (P256) or depositor (Ed25519)
+    // is executed exactly (same utxo/addr + amount). Extra executed creates/withdraws are allowed
+    // (the provider fee); the balance check bounds them to the residual the signers left.
+    assert_signed_effects_are_executed(&e, &op);
 
     let auth_req = calculate_auth_requirements(e, &op.spend); // &vec![&e]);
 
@@ -85,8 +85,8 @@ pub fn pre_process_channel_operation(
     return (utxo_op, total_deposit, total_withdraw);
 }
 
-/// MOON-01 binding: enforce that the bundle's executed create/withdraw effects are exactly the
-/// set of `Create` / `ExtWithdraw` conditions that were cryptographically authorized.
+/// MOON-01 binding: enforce that every cryptographically-signed `Create` / `ExtWithdraw` condition
+/// is executed exactly by the bundle (subset direction `authorized ⊆ executed`).
 ///
 /// Authorized set = every `Condition::Create` / `Condition::ExtWithdraw` found in the spend
 /// conditions (P256-signed by the UTXO owner, verified via the auth contract) and the deposit
@@ -98,14 +98,19 @@ pub fn pre_process_channel_operation(
 /// Executed set = `op.create` rendered as `Condition::Create` and `op.withdraw` rendered as
 /// `Condition::ExtWithdraw`.
 ///
-/// Both sets are compared by canonical XDR bytes with set (dedup) semantics, so a multi-spend
-/// bundle where each spend repeats (or partitions) the full output set is accepted as long as the
-/// union matches the executed effects.
+/// Compared by canonical XDR bytes with set (dedup) semantics, so a multi-spend bundle where each
+/// spend repeats (or partitions) the output set is accepted as long as every signed effect appears
+/// in the executed effects. A signer's outputs therefore cannot be dropped, reduced, amount-changed,
+/// or redirected (any of those removes the exact `(utxo|addr, amount)` key from `executed`).
+///
+/// EXTRA executed creates/withdraws beyond the signed set are permitted — this is the provider fee.
+/// The retained balance check (`Σexecuted == Σinputs`) bounds those extras to exactly the residual
+/// the signers left unallocated (deposit over-funded / spend under-claimed); for a pure internal
+/// transfer the residual is zero, so no extra create can balance.
 ///
 /// ### Panics
-/// - `UnauthorizedOperation` if an executed effect is not authorized, or an authorized
-///   create/withdraw condition is not executed.
-fn assert_executed_effects_are_authorized(e: &Env, op: &ChannelOperation) {
+/// - `UnauthorizedOperation` if a signed create/withdraw condition is not executed.
+fn assert_signed_effects_are_executed(e: &Env, op: &ChannelOperation) {
     let mut authorized: Map<Bytes, ()> = Map::new(e);
     collect_authorized_effects(e, &mut authorized, &op.spend);
     collect_authorized_effects_from_external(e, &mut authorized, &op.deposit);
@@ -118,14 +123,9 @@ fn assert_executed_effects_are_authorized(e: &Env, op: &ChannelOperation) {
         executed.set(Condition::ExtWithdraw(addr, amount).to_xdr(e), ());
     }
 
-    // Exact set-equality: |executed| == |authorized| and executed ⊆ authorized ⇒ sets equal.
-    assert_with_error!(
-        e,
-        executed.len() == authorized.len(),
-        Error::UnauthorizedOperation
-    );
-    for key in executed.keys().iter() {
-        assert_with_error!(e, authorized.contains_key(key), Error::UnauthorizedOperation);
+    // Subset: every signed effect must be executed exactly. Extra executed effects are allowed.
+    for key in authorized.keys().iter() {
+        assert_with_error!(e, executed.contains_key(key), Error::UnauthorizedOperation);
     }
 }
 

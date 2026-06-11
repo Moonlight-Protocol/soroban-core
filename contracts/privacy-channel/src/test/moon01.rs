@@ -1,8 +1,11 @@
 #![cfg(test)]
-//! MOON-01 regression tests: executed create/withdraw effects must be exactly the set of
-//! owner-signed `Create` / `ExtWithdraw` conditions. The headline test reproduces the audit's
-//! redirect attack and proves the contract now REJECTS it; the others prove legitimate bundles
-//! (multi-spend full-output-set, multi-spend partition, and the withdraw flow) are still ACCEPTED.
+//! MOON-01 regression tests: every owner-signed `Create` / `ExtWithdraw` condition must be executed
+//! exactly (subset binding `authorized ⊆ executed`), so a signer's outputs can't be dropped,
+//! reduced, or redirected. Extra executed creates/withdraws (the provider fee) are allowed but
+//! bounded by the balance check to the residual the signers left. The headline tests reproduce the
+//! audit's redirect attack and prove it is now REJECTED; others prove legitimate bundles
+//! (multi-spend full-set, partition, withdraw, and provider-fee) are ACCEPTED, and that a provider
+//! cannot take more than the residual.
 extern crate std;
 
 use crate::{
@@ -55,10 +58,7 @@ fn fund_utxos(
 
     let live = e.ledger().sequence() + 100;
 
-    let provider_sig = provider.sign(
-        e,
-        op.get_auth_entry_payload_hash_for_bundle(e, nonce, live),
-    );
+    let provider_sig = provider.sign(e, op.get_auth_entry_payload_hash_for_bundle(e, nonce, live));
     op.add_provider_signature(e, provider.address.clone(), provider_sig, live);
 
     let depositor_sig = depositor.sign_for_transaction(
@@ -84,6 +84,15 @@ fn unauthorized(res_err: Option<Result<Error, soroban_sdk::InvokeError>>) {
     );
 }
 
+fn unbalanced(res_err: Option<Result<Error, soroban_sdk::InvokeError>>) {
+    assert_eq!(
+        res_err,
+        Some(Ok(Error::from_contract_error(
+            ContractError::UnbalancedBundle as u32
+        )))
+    );
+}
+
 /// THE GATE (audit repro). A victim signs a spend authorizing an internal change-create, but the
 /// provider keeps `op.spend` byte-identical (so the P256 sig still verifies) and substitutes the
 /// output with a withdrawal to an attacker — perfectly balanced. Pre-fix this was ACCEPTED and the
@@ -98,7 +107,17 @@ fn test_moon01_redirect_spend_output_to_attacker_withdraw_is_rejected() {
     // Fund the victim UTXO with 500.
     let utxo_victim = P256KeyPair::generate(&e);
     let creates = vec![&e, (utxo_victim.public_key.clone(), 500_i128)];
-    fund_utxos(&e, &channel, &auth, &token, &provider_a, &john, &creates, 500, 0);
+    fund_utxos(
+        &e,
+        &channel,
+        &auth,
+        &token,
+        &provider_a,
+        &john,
+        &creates,
+        500,
+        0,
+    );
     assert_eq!(channel.utxo_balance(&utxo_victim.public_key), 500);
     assert_eq!(channel.supply(), 500);
 
@@ -119,7 +138,10 @@ fn test_moon01_redirect_spend_output_to_attacker_withdraw_is_rejected() {
     // Victim authorizes an INTERNAL change-create of 500 to utxo_change...
     atk.add_spend(
         utxo_victim.public_key.clone(),
-        vec![&e, Condition::Create(utxo_change.public_key.clone(), 500_i128)],
+        vec![
+            &e,
+            Condition::Create(utxo_change.public_key.clone(), 500_i128),
+        ],
     );
     // ...but the bundle drops the create and redirects 500 OUT to the attacker. Balanced (500==500).
     atk.add_withdraw(&e, attacker.clone(), 500_i128, vec![&e]);
@@ -131,11 +153,8 @@ fn test_moon01_redirect_spend_output_to_attacker_withdraw_is_rejected() {
     atk.add_provider_signature(&e, provider_a.address.clone(), p_sig, live);
 
     // The victim's P256 signature is over the UNCHANGED conditions and still verifies.
-    let v_sig = utxo_victim.sign(&atk.get_auth_hash_for_spend(
-        &e,
-        utxo_victim.public_key.clone(),
-        live,
-    ));
+    let v_sig =
+        utxo_victim.sign(&atk.get_auth_hash_for_spend(&e, utxo_victim.public_key.clone(), live));
     atk.add_spend_signature(&e, utxo_victim.public_key.clone(), v_sig, live);
 
     let res = channel
@@ -160,7 +179,17 @@ fn test_moon01_redirect_spend_output_to_attacker_create_is_rejected() {
 
     let utxo_victim = P256KeyPair::generate(&e);
     let creates = vec![&e, (utxo_victim.public_key.clone(), 500_i128)];
-    fund_utxos(&e, &channel, &auth, &token, &provider_a, &john, &creates, 500, 0);
+    fund_utxos(
+        &e,
+        &channel,
+        &auth,
+        &token,
+        &provider_a,
+        &john,
+        &creates,
+        500,
+        0,
+    );
 
     e.ledger().set_sequence_number(3);
     let live = e.ledger().sequence() + 100;
@@ -177,7 +206,10 @@ fn test_moon01_redirect_spend_output_to_attacker_create_is_rejected() {
     );
     atk.add_spend(
         utxo_victim.public_key.clone(),
-        vec![&e, Condition::Create(utxo_intended.public_key.clone(), 500_i128)],
+        vec![
+            &e,
+            Condition::Create(utxo_intended.public_key.clone(), 500_i128),
+        ],
     );
     // Substitute the create to an attacker-owned UTXO, same amount → balanced.
     atk.add_create(utxo_attacker.public_key.clone(), 500_i128);
@@ -187,11 +219,8 @@ fn test_moon01_redirect_spend_output_to_attacker_create_is_rejected() {
         atk.get_auth_entry_payload_hash_for_bundle(&e, nonce, live),
     );
     atk.add_provider_signature(&e, provider_a.address.clone(), p_sig, live);
-    let v_sig = utxo_victim.sign(&atk.get_auth_hash_for_spend(
-        &e,
-        utxo_victim.public_key.clone(),
-        live,
-    ));
+    let v_sig =
+        utxo_victim.sign(&atk.get_auth_hash_for_spend(&e, utxo_victim.public_key.clone(), live));
     atk.add_spend_signature(&e, utxo_victim.public_key.clone(), v_sig, live);
 
     let res = channel
@@ -221,7 +250,17 @@ fn test_moon01_multispend_full_outputset_is_accepted() {
         (utxo_a.public_key.clone(), 300_i128),
         (utxo_b.public_key.clone(), 200_i128),
     ];
-    fund_utxos(&e, &channel, &auth, &token, &provider_a, &john, &creates, 500, 0);
+    fund_utxos(
+        &e,
+        &channel,
+        &auth,
+        &token,
+        &provider_a,
+        &john,
+        &creates,
+        500,
+        0,
+    );
 
     e.ledger().set_sequence_number(3);
     let live = e.ledger().sequence() + 100;
@@ -280,7 +319,17 @@ fn test_moon01_legit_withdraw_is_accepted() {
 
     let utxo_a = P256KeyPair::generate(&e);
     let creates = vec![&e, (utxo_a.public_key.clone(), 500_i128)];
-    fund_utxos(&e, &channel, &auth, &token, &provider_a, &john, &creates, 500, 0);
+    fund_utxos(
+        &e,
+        &channel,
+        &auth,
+        &token,
+        &provider_a,
+        &john,
+        &creates,
+        500,
+        0,
+    );
 
     e.ledger().set_sequence_number(3);
     let live = e.ledger().sequence() + 100;
@@ -323,4 +372,191 @@ fn test_moon01_legit_withdraw_is_accepted() {
     assert_eq!(channel.utxo_balance(&utxo_change.public_key), 100);
     assert_eq!(channel.utxo_balance(&utxo_a.public_key), 0);
     assert_eq!(channel.supply(), 100); // 500 deposited - 400 withdrawn
+}
+
+/// Provider fee WITHIN the residual is accepted (the real e2e shape): user spends 1000 and signs
+/// `Create(dest, 995)`; the provider adds an unsigned `Create(opex, 5)` fee. Balanced 1000 == 1000.
+#[test]
+fn test_moon01_provider_fee_within_residual_is_accepted() {
+    let e = get_env_with_g_accounts();
+    let (provider_a, _b, john, _jane, _) = get_snapshot_g_accounts(&e);
+    let (channel, auth, token, _admin) = create_contracts(&e);
+    auth.mock_all_auths().add_provider(&provider_a.address);
+
+    let utxo_src = P256KeyPair::generate(&e);
+    let creates = vec![&e, (utxo_src.public_key.clone(), 1000_i128)];
+    fund_utxos(
+        &e,
+        &channel,
+        &auth,
+        &token,
+        &provider_a,
+        &john,
+        &creates,
+        1000,
+        0,
+    );
+
+    e.ledger().set_sequence_number(3);
+    let live = e.ledger().sequence() + 100;
+    let nonce = 1;
+
+    let utxo_dest = P256KeyPair::generate(&e);
+    let utxo_opex = P256KeyPair::generate(&e);
+
+    let mut op = ChannelOperationBuilder::generate(
+        &e,
+        channel.address.clone(),
+        auth.address.clone(),
+        token.address.clone(),
+    );
+    op.add_spend(
+        utxo_src.public_key.clone(),
+        vec![
+            &e,
+            Condition::Create(utxo_dest.public_key.clone(), 995_i128),
+        ], // signer claims 995
+    );
+    op.add_create(utxo_dest.public_key.clone(), 995_i128);
+    op.add_create(utxo_opex.public_key.clone(), 5_i128); // provider fee (unsigned), == residual
+
+    let p_sig = provider_a.sign(
+        &e,
+        op.get_auth_entry_payload_hash_for_bundle(&e, nonce, live),
+    );
+    op.add_provider_signature(&e, provider_a.address.clone(), p_sig, live);
+    let s_sig = utxo_src.sign(&op.get_auth_hash_for_spend(&e, utxo_src.public_key.clone(), live));
+    op.add_spend_signature(&e, utxo_src.public_key.clone(), s_sig, live);
+
+    channel
+        .set_auths(&[op.get_auth_entry(&e, nonce, live)])
+        .transact(&op.get_operation_bundle());
+
+    assert_eq!(channel.utxo_balance(&utxo_src.public_key), 0);
+    assert_eq!(channel.utxo_balance(&utxo_dest.public_key), 995); // signer's output delivered exactly
+    assert_eq!(channel.utxo_balance(&utxo_opex.public_key), 5); // provider fee
+}
+
+/// Provider tries to take MORE than the residual: user signs `Create(dest, 995)`, provider adds
+/// `Create(opex, 50)` (residual is only 5). Balance check rejects (Σcreated 1045 != Σspent 1000).
+#[test]
+fn test_moon01_provider_fee_exceeding_residual_is_rejected() {
+    let e = get_env_with_g_accounts();
+    let (provider_a, _b, john, _jane, _) = get_snapshot_g_accounts(&e);
+    let (channel, auth, token, _admin) = create_contracts(&e);
+    auth.mock_all_auths().add_provider(&provider_a.address);
+
+    let utxo_src = P256KeyPair::generate(&e);
+    let creates = vec![&e, (utxo_src.public_key.clone(), 1000_i128)];
+    fund_utxos(
+        &e,
+        &channel,
+        &auth,
+        &token,
+        &provider_a,
+        &john,
+        &creates,
+        1000,
+        0,
+    );
+
+    e.ledger().set_sequence_number(3);
+    let live = e.ledger().sequence() + 100;
+    let nonce = 1;
+
+    let utxo_dest = P256KeyPair::generate(&e);
+    let utxo_opex = P256KeyPair::generate(&e);
+
+    let mut op = ChannelOperationBuilder::generate(
+        &e,
+        channel.address.clone(),
+        auth.address.clone(),
+        token.address.clone(),
+    );
+    op.add_spend(
+        utxo_src.public_key.clone(),
+        vec![
+            &e,
+            Condition::Create(utxo_dest.public_key.clone(), 995_i128),
+        ],
+    );
+    op.add_create(utxo_dest.public_key.clone(), 995_i128);
+    op.add_create(utxo_opex.public_key.clone(), 50_i128); // exceeds the 5 residual
+
+    let p_sig = provider_a.sign(
+        &e,
+        op.get_auth_entry_payload_hash_for_bundle(&e, nonce, live),
+    );
+    op.add_provider_signature(&e, provider_a.address.clone(), p_sig, live);
+    let s_sig = utxo_src.sign(&op.get_auth_hash_for_spend(&e, utxo_src.public_key.clone(), live));
+    op.add_spend_signature(&e, utxo_src.public_key.clone(), s_sig, live);
+
+    let res = channel
+        .set_auths(&[op.get_auth_entry(&e, nonce, live)])
+        .try_transact(&op.get_operation_bundle());
+
+    unbalanced(res.err());
+    assert_eq!(channel.utxo_balance(&utxo_src.public_key), 1000); // nothing moved
+}
+
+/// Pure internal transfer (residual 0): user spends 500 and signs `Create(dest, 500)`. A provider
+/// attempt to add ANY extra create has no residual to fund it -> balance check rejects.
+#[test]
+fn test_moon01_internal_transfer_extra_create_is_rejected() {
+    let e = get_env_with_g_accounts();
+    let (provider_a, _b, john, _jane, _) = get_snapshot_g_accounts(&e);
+    let (channel, auth, token, _admin) = create_contracts(&e);
+    auth.mock_all_auths().add_provider(&provider_a.address);
+
+    let utxo_src = P256KeyPair::generate(&e);
+    let creates = vec![&e, (utxo_src.public_key.clone(), 500_i128)];
+    fund_utxos(
+        &e,
+        &channel,
+        &auth,
+        &token,
+        &provider_a,
+        &john,
+        &creates,
+        500,
+        0,
+    );
+
+    e.ledger().set_sequence_number(3);
+    let live = e.ledger().sequence() + 100;
+    let nonce = 1;
+
+    let utxo_dest = P256KeyPair::generate(&e);
+    let utxo_opex = P256KeyPair::generate(&e);
+
+    let mut op = ChannelOperationBuilder::generate(
+        &e,
+        channel.address.clone(),
+        auth.address.clone(),
+        token.address.clone(),
+    );
+    op.add_spend(
+        utxo_src.public_key.clone(),
+        vec![
+            &e,
+            Condition::Create(utxo_dest.public_key.clone(), 500_i128),
+        ], // claims all 500
+    );
+    op.add_create(utxo_dest.public_key.clone(), 500_i128);
+    op.add_create(utxo_opex.public_key.clone(), 1_i128); // no residual to fund this
+
+    let p_sig = provider_a.sign(
+        &e,
+        op.get_auth_entry_payload_hash_for_bundle(&e, nonce, live),
+    );
+    op.add_provider_signature(&e, provider_a.address.clone(), p_sig, live);
+    let s_sig = utxo_src.sign(&op.get_auth_hash_for_spend(&e, utxo_src.public_key.clone(), live));
+    op.add_spend_signature(&e, utxo_src.public_key.clone(), s_sig, live);
+
+    let res = channel
+        .set_auths(&[op.get_auth_entry(&e, nonce, live)])
+        .try_transact(&op.get_operation_bundle());
+
+    unbalanced(res.err());
+    assert_eq!(channel.utxo_balance(&utxo_src.public_key), 500);
 }
