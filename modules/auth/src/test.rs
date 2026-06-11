@@ -267,3 +267,42 @@ fn test_handle_utxo_auth_empty_context_does_not_skip_later_spend_context() {
 
     assert_eq!(result, Err(MoonlightError::MissingSignature));
 }
+
+/// MOON-04: lock the panic-on-failure semantic the verifier wrappers depend on. An invalid P256
+/// signature (verified against a different payload than it signed) must panic / trap.
+#[test]
+#[should_panic]
+fn signature_verification_panics_on_invalid_p256_signature() {
+    let e = Env::default();
+    let kp = P256KeyPair::generate(&e);
+    let signed = e
+        .crypto()
+        .sha256(&soroban_sdk::Bytes::from_array(&e, b"the-signed-message"));
+    let other = e
+        .crypto()
+        .sha256(&soroban_sdk::Bytes::from_array(&e, b"a-different-message"));
+    let sig = kp.sign(&signed);
+    let signature = Signature::P256(soroban_sdk::BytesN::<64>::from_array(&e, &sig));
+    let signer = SignerKey::P256(kp.public_key.clone());
+
+    verify_signature(&e, &signer, &signature, &other).unwrap();
+}
+
+/// MOON-04: same lock for Ed25519.
+#[test]
+#[should_panic]
+fn signature_verification_panics_on_invalid_ed25519_signature() {
+    let e = Env::default();
+    let acc = Ed25519Account::generate(&e);
+    let signed = e
+        .crypto()
+        .sha256(&soroban_sdk::Bytes::from_array(&e, b"the-signed-message"));
+    let other = e
+        .crypto()
+        .sha256(&soroban_sdk::Bytes::from_array(&e, b"a-different-message"));
+    let sig = acc.sign(&e, signed.clone());
+    let signature = Signature::Ed25519(sig);
+    let signer = SignerKey::Ed25519(acc.public_key.clone());
+
+    verify_signature(&e, &signer, &signature, &other).unwrap();
+}

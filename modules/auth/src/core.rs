@@ -8,6 +8,16 @@ use soroban_sdk::{
     TryIntoVal, Vec,
 };
 
+/// Verify a secp256r1 (P-256) signature.
+///
+/// # Safety / invariant (MOON-04)
+/// `secp256r1_verify` returns `()` and **panics (traps the transaction) on an invalid signature**;
+/// it never returns an error to inspect. This wrapper therefore returns `Ok(())` unconditionally
+/// and relies entirely on that panic-on-failure semantic of soroban-sdk 25.3.x — there is no
+/// success/failure value to branch on. If a future SDK changes these primitives to RETURN a
+/// result instead of panicking, this wrapper would silently accept invalid signatures and MUST be
+/// rewritten to check the returned value. The `signature_verification_*` regression tests lock the
+/// current behavior; re-validate them on every SDK upgrade.
 fn verify_p256_signature(
     e: &Env,
     public_key: &BytesN<65>,
@@ -20,6 +30,12 @@ fn verify_p256_signature(
     Ok(())
 }
 
+/// Verify an Ed25519 signature.
+///
+/// # Safety / invariant (MOON-04)
+/// See [`verify_p256_signature`]: `ed25519_verify` panics on an invalid signature and returns no
+/// inspectable result, so this wrapper depends on that panic-on-failure semantic. Re-validate on
+/// every SDK upgrade.
 fn verify_ed25519_signature(
     e: &Env,
     public_key: &BytesN<32>,
