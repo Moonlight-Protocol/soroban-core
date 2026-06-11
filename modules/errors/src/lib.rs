@@ -88,6 +88,8 @@ pub enum MoonlightError {
     UnauthorizedOperation = 3_006,
     /// A deposit or withdraw amount was not strictly positive.
     InvalidExternalAmount = 3_007,
+    /// `transact` was re-entered while a call was already in progress.
+    ReentrantCall = 3_008,
 
     // Helper errors: 4000-4099.
     /// An address payload was expected to be an Ed25519 account address but was not.
