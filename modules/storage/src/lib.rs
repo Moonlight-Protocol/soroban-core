@@ -67,6 +67,14 @@ impl Store {
     // One bitmap byte tracks 8 slots, rounded up if the drawer size changes.
     const BITMAP_BYTES: u32 = (Self::SLOTS_PER_DRAWER + 7) / 8;
 
+    // MOON-02: persistent-entry TTL management. UTXO metadata and drawer bitmaps back user funds,
+    // so they must outlive long idle periods; without an explicit bump they archive and an
+    // archived (shared) drawer bitmap would freeze every UTXO in that drawer until restored.
+    const DAY_IN_LEDGERS: u32 = 17_280;
+    const PERSISTENT_BUMP_AMOUNT: u32 = 30 * Self::DAY_IN_LEDGERS;
+    const PERSISTENT_LIFETIME_THRESHOLD: u32 =
+        Self::PERSISTENT_BUMP_AMOUNT - Self::DAY_IN_LEDGERS;
+
     /// Runs UTXO storage operations in a scoped drawer cache.
     ///
     /// The closure receives the only mutable handle to storage operations. Any
@@ -147,6 +155,7 @@ impl Store {
                 slot_idx,
             },
         );
+        self.bump_utxo_meta_ttl(&uk);
 
         let mut bitmap = self.get_or_create_bitmap(drawer_id);
         self.set_bit_in_bitmap(&mut bitmap, slot_idx, true);
@@ -173,6 +182,9 @@ impl Store {
                     panic_with_error!(&self.env, Error::UtxoAlreadySpent);
                 }
 
+                // Keep the spent-record alive so the UTXO cannot be recreated after archival.
+                self.bump_utxo_meta_ttl(&uk);
+
                 self.set_bit_in_bitmap(&mut bitmap, slot_idx, false);
                 self.cache.drawers.set(drawer_id, bitmap);
                 self.cache.dirty_drawers.set(drawer_id, true);
@@ -181,6 +193,24 @@ impl Store {
             }
             None => panic_with_error!(&self.env, Error::UtxoDoesNotExist),
         }
+    }
+
+    #[inline(always)]
+    fn bump_utxo_meta_ttl(&self, key: &UTXOCoreDataKey) {
+        self.env.storage().persistent().extend_ttl(
+            key,
+            Self::PERSISTENT_LIFETIME_THRESHOLD,
+            Self::PERSISTENT_BUMP_AMOUNT,
+        );
+    }
+
+    #[inline(always)]
+    pub(crate) fn bump_drawer_ttl(env: &Env, key: &DrawerDataKey) {
+        env.storage().persistent().extend_ttl(
+            key,
+            Self::PERSISTENT_LIFETIME_THRESHOLD,
+            Self::PERSISTENT_BUMP_AMOUNT,
+        );
     }
 
     #[inline(always)]

@@ -13,6 +13,18 @@ pub struct PrivacyChannelContract;
 
 impl UtxoHandlerTrait for PrivacyChannelContract {}
 
+// MOON-02: instance-storage holds the asset/auth bindings, supply, and owner; bump its TTL on
+// every mutating entrypoint so the contract instance cannot archive out from under live channels.
+const DAY_IN_LEDGERS: u32 = 17_280;
+const INSTANCE_BUMP_AMOUNT: u32 = 7 * DAY_IN_LEDGERS;
+const INSTANCE_LIFETIME_THRESHOLD: u32 = INSTANCE_BUMP_AMOUNT - DAY_IN_LEDGERS;
+
+fn bump_instance_ttl(e: &Env) {
+    e.storage()
+        .instance()
+        .extend_ttl(INSTANCE_LIFETIME_THRESHOLD, INSTANCE_BUMP_AMOUNT);
+}
+
 #[contractimpl]
 impl PrivacyChannelContract {
     pub fn __constructor(e: &Env, admin: Address, auth_contract: Address, asset: Address) {
@@ -20,6 +32,7 @@ impl PrivacyChannelContract {
         ownable::enforce_owner_auth(e);
         <Self as UtxoHandlerTrait>::set_auth(e, &auth_contract);
         write_asset_unchecked(e, asset);
+        bump_instance_ttl(e);
     }
 
     pub fn admin(e: &Env) -> Address {
@@ -60,6 +73,8 @@ impl PrivacyChannelContract {
     }
 
     pub fn transact(e: Env, op: ChannelOperation) {
+        bump_instance_ttl(&e);
+
         let (utxo_op, total_deposit, total_withdraw) =
             pre_process_channel_operation(&e, op.clone());
 

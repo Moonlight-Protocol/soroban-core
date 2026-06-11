@@ -34,10 +34,23 @@ pub struct ChannelAuthContract;
 
 impl UtxoAuthorizable for ChannelAuthContract {}
 
+// MOON-02: instance-storage holds the provider set and owner; bump its TTL on construction and on
+// every auth check (which happens on every governed bundle) so it cannot archive while in use.
+const DAY_IN_LEDGERS: u32 = 17_280;
+const INSTANCE_BUMP_AMOUNT: u32 = 7 * DAY_IN_LEDGERS;
+const INSTANCE_LIFETIME_THRESHOLD: u32 = INSTANCE_BUMP_AMOUNT - DAY_IN_LEDGERS;
+
+fn bump_instance_ttl(e: &Env) {
+    e.storage()
+        .instance()
+        .extend_ttl(INSTANCE_LIFETIME_THRESHOLD, INSTANCE_BUMP_AMOUNT);
+}
+
 #[contractimpl]
 impl ChannelAuthContract {
     pub fn __constructor(env: &Env, admin: &Address) {
         ownable::set_owner(env, admin);
+        bump_instance_ttl(env);
         ContractInitialized {
             admin: admin.clone(),
         }
@@ -96,6 +109,7 @@ impl CustomAccountInterface for ChannelAuthContract {
         signatures: Signatures, // provided by tx submitter in Authorization entry
         contexts: Vec<Context>, // require_auth_for_args
     ) -> Result<(), MoonlightError> {
+        bump_instance_ttl(&e);
         Self::require_provider(&e, payload, signatures.clone())?;
         Self::handle_utxo_auth(&e, signatures.clone(), contexts)
     }
