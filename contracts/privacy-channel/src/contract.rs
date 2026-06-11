@@ -1,10 +1,18 @@
 use moonlight_errors::Error;
 use moonlight_utxo_core::core::UtxoHandlerTrait;
 use soroban_sdk::{
-    contract, contractimpl, panic_with_error, symbol_short, Address, BytesN, Env, Symbol, Vec,
+    contract, contractevent, contractimpl, panic_with_error, symbol_short, Address, BytesN, Env,
+    Symbol, Vec,
 };
 use stellar_access::ownable;
 use stellar_contract_utils::upgradeable;
+
+// MOON-09: dedicated upgrade event for the governance audit trail.
+#[contractevent(data_format = "single-value")]
+pub struct Upgraded {
+    #[topic]
+    pub wasm_hash: BytesN<32>,
+}
 
 use crate::{
     storage::{read_asset, read_supply, write_asset_unchecked},
@@ -69,6 +77,10 @@ impl PrivacyChannelContract {
 
     pub fn upgrade(e: &Env, wasm_hash: BytesN<32>) {
         ownable::enforce_owner_auth(e);
+        Upgraded {
+            wasm_hash: wasm_hash.clone(),
+        }
+        .publish(e);
         upgradeable::upgrade(e, &wasm_hash);
     }
 

@@ -29,6 +29,14 @@ pub struct ProviderRemoved {
     pub provider: Address,
 }
 
+// MOON-09: emit a dedicated event on upgrade so the governance audit trail does not rely solely on
+// the raw Stellar transaction record.
+#[contractevent(data_format = "single-value")]
+pub struct Upgraded {
+    #[topic]
+    pub wasm_hash: BytesN<32>,
+}
+
 #[contract]
 pub struct ChannelAuthContract;
 
@@ -71,6 +79,10 @@ impl ChannelAuthContract {
 
     pub fn upgrade(e: &Env, wasm_hash: BytesN<32>) {
         ownable::enforce_owner_auth(e);
+        Upgraded {
+            wasm_hash: wasm_hash.clone(),
+        }
+        .publish(e);
         upgradeable::upgrade(e, &wasm_hash);
     }
 }
