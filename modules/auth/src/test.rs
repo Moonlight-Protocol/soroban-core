@@ -1,8 +1,16 @@
+use moonlight_errors::Error as MoonlightError;
 use moonlight_helpers::testutils::keys::{Ed25519Account, P256KeyPair};
-use moonlight_primitives::{Condition, Signature, SignerKey};
-use soroban_sdk::{testutils::Ledger, vec, xdr, Env, Error, Map};
+use moonlight_primitives::{Condition, Signature, Signatures, SignerKey};
+use soroban_sdk::{
+    auth::{Context, ContractContext},
+    testutils::{Address as _, Ledger},
+    vec, xdr, Address, Env, Error, Map, Symbol,
+};
 
-use crate::{core::verify_signature, testutils::contract::create_contract};
+use crate::{
+    core::{verify_signature, UtxoAuthorizable},
+    testutils::contract::{create_contract, AuthModuleTestContract},
+};
 use moonlight_utxo_core::testutils::{
     contract::create_contract as create_utxo_contract, operation_bundle::UTXOOperationBuilder,
 };
@@ -213,4 +221,49 @@ fn test_ed25519_signatures() {
 
         verify_signature(&e, &signer, &signature, &hash).unwrap();
     }
+}
+
+/// MOON-03: an empty-args context must not short-circuit the whole `handle_utxo_auth` check.
+/// With the empty context placed FIRST, the following spend-bearing context must still be
+/// evaluated (and here fail `MissingSignature`, since no signature is supplied). Pre-fix the
+/// `return Ok(())` skipped it entirely and the call wrongly succeeded.
+#[test]
+fn test_handle_utxo_auth_empty_context_does_not_skip_later_spend_context() {
+    let e = Env::default();
+    let (auth_client, _) = create_contract(&e);
+    let channel = Address::generate(&e);
+    let utxo = P256KeyPair::generate(&e);
+
+    // A spend context that DOES require a P256 signature for `utxo`.
+    let mut builder =
+        UTXOOperationBuilder::generate(&e, channel.clone(), auth_client.address.clone());
+    builder.add_spend(
+        utxo.public_key.clone(),
+        vec![&e, Condition::Create(utxo.public_key.clone(), 100_i128)],
+    );
+    let spend_args = builder.get_contract_auth_args(&e);
+
+    let empty_ctx = Context::Contract(ContractContext {
+        contract: channel.clone(),
+        fn_name: Symbol::new(&e, "noop"),
+        args: vec![&e], // empty args => no requirements for this context
+    });
+    let spend_ctx = Context::Contract(ContractContext {
+        contract: channel.clone(),
+        fn_name: Symbol::new(&e, "transact"),
+        args: spend_args,
+    });
+
+    // No signatures supplied at all.
+    let signatures = Signatures(Map::new(&e));
+
+    let result = e.as_contract(&auth_client.address, || {
+        <AuthModuleTestContract as UtxoAuthorizable>::handle_utxo_auth(
+            &e,
+            signatures.clone(),
+            vec![&e, empty_ctx.clone(), spend_ctx.clone()],
+        )
+    });
+
+    assert_eq!(result, Err(MoonlightError::MissingSignature));
 }

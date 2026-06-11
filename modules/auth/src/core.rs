@@ -66,7 +66,11 @@ pub trait UtxoAuthorizable {
                 let sig_map = signatures.0.clone();
 
                 if cc.args.len() < 1 {
-                    return Ok(()); // No auth requirements, skip
+                    // MOON-03: a context with no auth-requirements arg carries no UTXO
+                    // requirements, but it must only skip THIS context — never short-circuit the
+                    // whole check. A `return Ok(())` here would let an empty-args context that
+                    // precedes a spend-bearing context bypass the latter's P256 verification.
+                    continue;
                 }
 
                 let v_req = cc.args.get(0).ok_or(Error::BadArg)?;
