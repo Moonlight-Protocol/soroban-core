@@ -41,6 +41,8 @@ pub fn pre_process_channel_operation(
 
     let mut total_deposit: i128 = 0;
     for (_addr, amt, _conds) in op.deposit.iter() {
+        // MOON-05: reject non-positive amounts in-contract rather than relying on the asset SAC.
+        assert_with_error!(&e, amt > 0, Error::InvalidExternalAmount);
         total_deposit = match total_deposit.checked_add(amt) {
             Some(v) => v,
             None => panic_with_error!(&e, Error::AmountOverflow),
@@ -49,6 +51,7 @@ pub fn pre_process_channel_operation(
 
     let mut total_withdraw: i128 = 0;
     for (_addr, amt, _conds) in op.withdraw.iter() {
+        assert_with_error!(&e, amt > 0, Error::InvalidExternalAmount);
         total_withdraw = match total_withdraw.checked_add(amt) {
             Some(v) => v,
             None => panic_with_error!(&e, Error::AmountOverflow),
