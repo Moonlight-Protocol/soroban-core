@@ -23,14 +23,17 @@ impl DrawerCache {
         if self.state_dirty {
             if let Some(ref state) = self.state {
                 e.storage().persistent().set(&DrawerDataKey::State, state);
+                // MOON-02: keep the allocation-pointer entry alive.
+                Store::bump_drawer_ttl(e, &DrawerDataKey::State);
             }
         }
 
         for (drawer_id, _) in self.dirty_drawers.iter() {
             if let Some(bitmap) = self.drawers.get(drawer_id) {
-                e.storage()
-                    .persistent()
-                    .set(&Store::drawer_key(drawer_id), &bitmap);
+                let key = Store::drawer_key(drawer_id);
+                e.storage().persistent().set(&key, &bitmap);
+                // MOON-02: keep the shared drawer bitmap alive; archival would freeze the drawer.
+                Store::bump_drawer_ttl(e, &key);
             }
         }
     }

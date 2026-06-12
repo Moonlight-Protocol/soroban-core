@@ -83,6 +83,13 @@ pub enum MoonlightError {
     BundleHasConflictingConditions = 3_004,
     /// An amount calculation went below the minimum supported integer value.
     AmountUnderflow = 3_005,
+    /// An executed create/withdraw effect is not covered by an owner-signed condition,
+    /// or an owner-signed create/withdraw condition is not executed by the bundle.
+    UnauthorizedOperation = 3_006,
+    /// A deposit or withdraw amount was not strictly positive.
+    InvalidExternalAmount = 3_007,
+    /// `transact` was re-entered while a call was already in progress.
+    ReentrantCall = 3_008,
 
     // Helper errors: 4000-4099.
     /// An address payload was expected to be an Ed25519 account address but was not.

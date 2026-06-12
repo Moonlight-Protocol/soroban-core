@@ -1,3 +1,4 @@
+use soroban_sdk::testutils::storage::Persistent as _;
 use soroban_sdk::{contract, Address, Bytes, BytesN, Env};
 
 use crate::{hash_utxo_key, DrawerDataKey, DrawerState, Store, UTXOCoreDataKey, UtxoMeta};
@@ -205,6 +206,32 @@ fn rotates_to_the_next_drawer_when_the_current_drawer_is_full() {
         let bitmap = drawer_bitmap(&e, 2);
         assert_eq!(bitmap.len(), 1);
         assert_eq!(bitmap.get(0), Some(0b0000_0001));
+    });
+}
+
+#[test]
+fn create_and_spend_bump_persistent_ttl() {
+    // MOON-02: UTXO metadata, the shared drawer bitmap, and the allocation-state entry must be
+    // pushed to the long (30-day) TTL window so they cannot archive while the channel is live.
+    let e = Env::default();
+    let contract_id = storage_contract(&e);
+
+    in_contract(&e, &contract_id, || {
+        let key = utxo(&e, 1);
+        let uk = UTXOCoreDataKey::UTXO(hash_utxo_key(&e, &key));
+
+        Store::apply(&e, |store| store.create(&key, 100));
+
+        let min_ttl = Store::PERSISTENT_BUMP_AMOUNT - Store::DAY_IN_LEDGERS;
+        assert!(e.storage().persistent().get_ttl(&uk) >= min_ttl);
+        assert!(e.storage().persistent().get_ttl(&Store::drawer_key(1)) >= min_ttl);
+        assert!(e.storage().persistent().get_ttl(&DrawerDataKey::State) >= min_ttl);
+
+        // Spending keeps the now-spent record alive (so it cannot be recreated post-archival).
+        Store::apply(&e, |store| {
+            store.spend(&key);
+        });
+        assert!(e.storage().persistent().get_ttl(&uk) >= min_ttl);
     });
 }
 

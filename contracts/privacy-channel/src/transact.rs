@@ -9,7 +9,9 @@ use soroban_sdk::{
     auth::{ContractContext, InvokerContractAuthEntry, SubContractInvocation},
     contracttype, panic_with_error,
     token::TokenClient,
-    vec, Address, BytesN, Env, IntoVal, Symbol, Val, Vec,
+    vec,
+    xdr::ToXdr,
+    Address, Bytes, BytesN, Env, IntoVal, Map, Symbol, Val, Vec,
 };
 
 use crate::{
@@ -38,6 +40,8 @@ pub fn pre_process_channel_operation(
 
     let mut total_deposit: i128 = 0;
     for (_addr, amt, _conds) in op.deposit.iter() {
+        // MOON-05: reject non-positive amounts in-contract rather than relying on the asset SAC.
+        assert_with_error!(&e, amt > 0, Error::InvalidExternalAmount);
         total_deposit = match total_deposit.checked_add(amt) {
             Some(v) => v,
             None => panic_with_error!(&e, Error::AmountOverflow),
@@ -46,6 +50,7 @@ pub fn pre_process_channel_operation(
 
     let mut total_withdraw: i128 = 0;
     for (_addr, amt, _conds) in op.withdraw.iter() {
+        assert_with_error!(&e, amt > 0, Error::InvalidExternalAmount);
         total_withdraw = match total_withdraw.checked_add(amt) {
             Some(v) => v,
             None => panic_with_error!(&e, Error::AmountOverflow),
@@ -53,6 +58,15 @@ pub fn pre_process_channel_operation(
     }
 
     verify_external_operations(&e, op.deposit.clone(), op.withdraw.clone());
+
+    // MOON-01: bind owner-signed conditions to executed effects. The balance check in
+    // `process_bundle` only guarantees value conservation, not *where* the value goes; without
+    // this, a provider can keep `op.spend` byte-identical (owner P256 sig still verifies) and
+    // redirect `op.create` / `op.withdraw` to an attacker while staying balanced. This enforces
+    // that every Create/ExtWithdraw condition signed by a spend owner (P256) or depositor (Ed25519)
+    // is executed exactly (same utxo/addr + amount). Extra executed creates/withdraws are allowed
+    // (the provider fee); the balance check bounds them to the residual the signers left.
+    assert_signed_effects_are_executed(&e, &op);
 
     let auth_req = calculate_auth_requirements(e, &op.spend); // &vec![&e]);
 
@@ -69,6 +83,84 @@ pub fn pre_process_channel_operation(
     };
 
     return (utxo_op, total_deposit, total_withdraw);
+}
+
+/// MOON-01 binding: enforce that every cryptographically-signed `Create` / `ExtWithdraw` condition
+/// is executed exactly by the bundle (subset direction `authorized ⊆ executed`).
+///
+/// Authorized set = every `Condition::Create` / `Condition::ExtWithdraw` found in the spend
+/// conditions (P256-signed by the UTXO owner, verified via the auth contract) and the deposit
+/// conditions (Ed25519-signed by the depositor via `require_auth_for_args`). Withdraw-tuple
+/// conditions are unsigned and are intentionally NOT a source of authorization. `ExtDeposit`
+/// (already bound by the depositor's SAC-transfer auth) and `ExtIntegration` (never executed) are
+/// not execution-bound and are ignored.
+///
+/// Executed set = `op.create` rendered as `Condition::Create` and `op.withdraw` rendered as
+/// `Condition::ExtWithdraw`.
+///
+/// Compared by canonical XDR bytes with set (dedup) semantics, so a multi-spend bundle where each
+/// spend repeats (or partitions) the output set is accepted as long as every signed effect appears
+/// in the executed effects. A signer's outputs therefore cannot be dropped, reduced, amount-changed,
+/// or redirected (any of those removes the exact `(utxo|addr, amount)` key from `executed`).
+///
+/// EXTRA executed creates/withdraws beyond the signed set are permitted — this is the provider fee.
+/// The retained balance check (`Σexecuted == Σinputs`) bounds those extras to exactly the residual
+/// the signers left unallocated (deposit over-funded / spend under-claimed); for a pure internal
+/// transfer the residual is zero, so no extra create can balance.
+///
+/// ### Panics
+/// - `UnauthorizedOperation` if a signed create/withdraw condition is not executed.
+fn assert_signed_effects_are_executed(e: &Env, op: &ChannelOperation) {
+    let mut authorized: Map<Bytes, ()> = Map::new(e);
+    collect_authorized_effects(e, &mut authorized, &op.spend);
+    collect_authorized_effects_from_external(e, &mut authorized, &op.deposit);
+
+    let mut executed: Map<Bytes, ()> = Map::new(e);
+    for (utxo, amount) in op.create.iter() {
+        executed.set(Condition::Create(utxo, amount).to_xdr(e), ());
+    }
+    for (addr, amount, _conds) in op.withdraw.iter() {
+        executed.set(Condition::ExtWithdraw(addr, amount).to_xdr(e), ());
+    }
+
+    // Subset: every signed effect must be executed exactly. Extra executed effects are allowed.
+    for key in authorized.keys().iter() {
+        assert_with_error!(e, executed.contains_key(key), Error::UnauthorizedOperation);
+    }
+}
+
+fn collect_authorized_effects(
+    e: &Env,
+    set: &mut Map<Bytes, ()>,
+    spend: &Vec<(BytesN<65>, Vec<Condition>)>,
+) {
+    for (_utxo, conditions) in spend.iter() {
+        for cond in conditions.iter() {
+            if is_execution_bound(&cond) {
+                set.set(cond.to_xdr(e), ());
+            }
+        }
+    }
+}
+
+fn collect_authorized_effects_from_external(
+    e: &Env,
+    set: &mut Map<Bytes, ()>,
+    external: &Vec<(Address, i128, Vec<Condition>)>,
+) {
+    for (_addr, _amount, conditions) in external.iter() {
+        for cond in conditions.iter() {
+            if is_execution_bound(&cond) {
+                set.set(cond.to_xdr(e), ());
+            }
+        }
+    }
+}
+
+/// Only `Create` and `ExtWithdraw` conditions describe on-ledger value movement the bundle
+/// executes; they are the effects this binding governs.
+fn is_execution_bound(cond: &Condition) -> bool {
+    matches!(cond, Condition::Create(..) | Condition::ExtWithdraw(..))
 }
 
 fn verify_external_operations(

@@ -188,7 +188,7 @@ pub trait UtxoHandlerTrait {
         #[cfg(not(feature = "no-utxo-events"))]
         UtxoEvent {
             name: symbol_short!("utxo"),
-            utxo,
+            utxo: utxo.clone(),
             action: symbol_short!("create"),
             amount,
         }

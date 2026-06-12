@@ -1,7 +1,18 @@
+use moonlight_errors::Error;
 use moonlight_utxo_core::core::UtxoHandlerTrait;
-use soroban_sdk::{contract, contractimpl, Address, BytesN, Env, Vec};
+use soroban_sdk::{
+    contract, contractevent, contractimpl, panic_with_error, symbol_short, Address, BytesN, Env,
+    Symbol, Vec,
+};
 use stellar_access::ownable;
 use stellar_contract_utils::upgradeable;
+
+// MOON-09: dedicated upgrade event for the governance audit trail.
+#[contractevent(data_format = "single-value")]
+pub struct Upgraded {
+    #[topic]
+    pub wasm_hash: BytesN<32>,
+}
 
 use crate::{
     storage::{read_asset, read_supply, write_asset_unchecked},
@@ -13,6 +24,35 @@ pub struct PrivacyChannelContract;
 
 impl UtxoHandlerTrait for PrivacyChannelContract {}
 
+// MOON-02: instance-storage holds the asset/auth bindings, supply, and owner; bump its TTL on
+// every mutating entrypoint so the contract instance cannot archive out from under live channels.
+const DAY_IN_LEDGERS: u32 = 17_280;
+const INSTANCE_BUMP_AMOUNT: u32 = 7 * DAY_IN_LEDGERS;
+const INSTANCE_LIFETIME_THRESHOLD: u32 = INSTANCE_BUMP_AMOUNT - DAY_IN_LEDGERS;
+
+fn bump_instance_ttl(e: &Env) {
+    e.storage()
+        .instance()
+        .extend_ttl(INSTANCE_LIFETIME_THRESHOLD, INSTANCE_BUMP_AMOUNT);
+}
+
+// MOON-06: reentrancy guard. `transact` makes external SAC calls (deposit pull / withdraw push);
+// a non-standard or malicious asset could call back into `transact`. The guard is a transient flag
+// that is set on entry and cleared on exit; a re-entrant call observes it and reverts. (On revert
+// the transient write is rolled back, so the flag never persists across transactions.)
+const REENTRANCY_GUARD: Symbol = symbol_short!("RGUARD");
+
+fn enter_reentrancy_guard(e: &Env) {
+    if e.storage().temporary().has(&REENTRANCY_GUARD) {
+        panic_with_error!(e, Error::ReentrantCall);
+    }
+    e.storage().temporary().set(&REENTRANCY_GUARD, &true);
+}
+
+fn exit_reentrancy_guard(e: &Env) {
+    e.storage().temporary().remove(&REENTRANCY_GUARD);
+}
+
 #[contractimpl]
 impl PrivacyChannelContract {
     pub fn __constructor(e: &Env, admin: Address, auth_contract: Address, asset: Address) {
@@ -20,6 +60,7 @@ impl PrivacyChannelContract {
         ownable::enforce_owner_auth(e);
         <Self as UtxoHandlerTrait>::set_auth(e, &auth_contract);
         write_asset_unchecked(e, asset);
+        bump_instance_ttl(e);
     }
 
     pub fn admin(e: &Env) -> Address {
@@ -36,6 +77,10 @@ impl PrivacyChannelContract {
 
     pub fn upgrade(e: &Env, wasm_hash: BytesN<32>) {
         ownable::enforce_owner_auth(e);
+        Upgraded {
+            wasm_hash: wasm_hash.clone(),
+        }
+        .publish(e);
         upgradeable::upgrade(e, &wasm_hash);
     }
 
@@ -60,11 +105,16 @@ impl PrivacyChannelContract {
     }
 
     pub fn transact(e: Env, op: ChannelOperation) {
+        bump_instance_ttl(&e);
+        enter_reentrancy_guard(&e);
+
         let (utxo_op, total_deposit, total_withdraw) =
             pre_process_channel_operation(&e, op.clone());
 
         Self::process_bundle(&e, utxo_op.clone(), total_deposit, total_withdraw);
 
         execute_external_operations(&e, op.deposit, op.withdraw);
+
+        exit_reentrancy_guard(&e);
     }
 }
