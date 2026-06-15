@@ -29,6 +29,20 @@ pub struct ProviderRemoved {
     pub provider: Address,
 }
 
+// UC6: the council's quorum-authorized record that an asset channel was enabled or disabled.
+// The contract holds NO channel/asset state — this event is the only on-chain artifact. The
+// council-platform DB (sole authoritative writer) and every provider converge on it: `enabled`
+// distinguishes enable/re-enable (true) from disable (false). `channel` is the privacy-channel
+// contract id; `asset` is its token contract id (a channel is single-asset, so this is self-describing).
+#[contractevent(data_format = "single-value")]
+pub struct ChannelStateChanged {
+    #[topic]
+    pub channel: Address,
+    #[topic]
+    pub asset: Address,
+    pub enabled: bool,
+}
+
 // MOON-09: emit a dedicated event on upgrade so the governance audit trail does not rely solely on
 // the raw Stellar transaction record.
 #[contractevent(data_format = "single-value")]
@@ -107,6 +121,37 @@ impl ChannelAuthContract {
         let addr = provider.clone();
         Self::deregister_provider(e, provider);
         ProviderRemoved { provider: addr }.publish(e);
+    }
+}
+
+// UC6: asset-lifecycle. Quorum-gated, event-only — the contract stores no channel/asset state;
+// it only emits the quorum-authorized record that the council DB and providers converge on. The
+// owner is the council quorum account, so `enforce_owner_auth` is the quorum gate (mirrors
+// add_provider/remove_provider).
+#[contractimpl]
+impl ChannelAuthContract {
+    /// Enable an asset `channel` for service. Also used to RE-ENABLE a previously disabled
+    /// channel — both resume full service, so both emit `ChannelStateChanged { enabled: true }`.
+    pub fn enable_channel(e: &Env, channel: Address, asset: Address) {
+        ownable::enforce_owner_auth(e);
+        ChannelStateChanged {
+            channel,
+            asset,
+            enabled: true,
+        }
+        .publish(e);
+    }
+
+    /// Disable an asset `channel`. The channel becomes withdraw-only (new deposits/sends rejected);
+    /// that enforcement lives provider-side. Emits `ChannelStateChanged { enabled: false }`.
+    pub fn disable_channel(e: &Env, channel: Address, asset: Address) {
+        ownable::enforce_owner_auth(e);
+        ChannelStateChanged {
+            channel,
+            asset,
+            enabled: false,
+        }
+        .publish(e);
     }
 }
 
