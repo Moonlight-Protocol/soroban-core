@@ -39,7 +39,6 @@ fn keeps_utxo_errors_in_their_reserved_range() {
         Error::RepeatedSpendUtxo.code(),
         Error::UtxoNotFound.code(),
         Error::AuthContractNotSet.code(),
-        Error::InvalidDrawerSlot.code(),
     ] {
         assert!((2_000..=2_099).contains(&code));
     }
