@@ -1,7 +1,8 @@
 use soroban_sdk::testutils::storage::Persistent as _;
-use soroban_sdk::{contract, Address, Bytes, BytesN, Env};
+use soroban_sdk::testutils::Ledger as _;
+use soroban_sdk::{contract, Address, BytesN, Env};
 
-use crate::{hash_utxo_key, DrawerDataKey, DrawerState, Store, UTXOCoreDataKey, UtxoMeta};
+use crate::{hash_utxo_key, Store, UTXOCoreDataKey};
 
 #[contract]
 struct StorageTestContract;
@@ -25,29 +26,19 @@ fn utxo(e: &Env, seed: u8) -> BytesN<65> {
     BytesN::<65>::from_array(e, &bytes)
 }
 
-fn metadata(e: &Env, utxo65: &BytesN<65>) -> UtxoMeta {
+/// Reads the raw per-UTXO spend-state entry (the stored amount, or `None` if no record exists).
+fn spend_state(e: &Env, utxo65: &BytesN<65>) -> Option<i128> {
     e.storage()
         .persistent()
-        .get::<_, UtxoMeta>(&UTXOCoreDataKey::UTXO(hash_utxo_key(e, utxo65)))
-        .unwrap()
+        .get::<_, i128>(&UTXOCoreDataKey::UTXO(hash_utxo_key(e, utxo65)))
 }
 
-fn drawer_state(e: &Env) -> DrawerState {
-    e.storage()
-        .persistent()
-        .get::<_, DrawerState>(&DrawerDataKey::State)
-        .unwrap()
-}
-
-fn drawer_bitmap(e: &Env, drawer_id: u32) -> Bytes {
-    e.storage()
-        .persistent()
-        .get::<_, Bytes>(&Store::drawer_key(drawer_id))
-        .unwrap()
+fn utxo_key(e: &Env, utxo65: &BytesN<65>) -> UTXOCoreDataKey {
+    UTXOCoreDataKey::UTXO(hash_utxo_key(e, utxo65))
 }
 
 #[test]
-fn missing_utxo_balance_is_negative_one_without_allocating_drawer_state() {
+fn missing_utxo_balance_is_negative_one_without_creating_an_entry() {
     let e = Env::default();
     let contract_id = storage_contract(&e);
 
@@ -57,16 +48,12 @@ fn missing_utxo_balance_is_negative_one_without_allocating_drawer_state() {
         let balance = Store::apply(&e, |store| store.balance(&missing));
 
         assert_eq!(balance, -1);
-        assert!(e
-            .storage()
-            .persistent()
-            .get::<_, DrawerState>(&DrawerDataKey::State)
-            .is_none());
+        assert!(spend_state(&e, &missing).is_none());
     });
 }
 
 #[test]
-fn create_persists_metadata_and_sets_first_drawer_bit() {
+fn create_persists_the_amount_in_a_per_utxo_entry() {
     let e = Env::default();
     let contract_id = storage_contract(&e);
 
@@ -76,24 +63,12 @@ fn create_persists_metadata_and_sets_first_drawer_bit() {
         Store::apply(&e, |store| store.create(&first, 100));
 
         assert_eq!(Store::apply(&e, |store| store.balance(&first)), 100);
-
-        let meta = metadata(&e, &first);
-        assert_eq!(meta.amount, 100);
-        assert_eq!(meta.drawer_id, 1);
-        assert_eq!(meta.slot_idx, 0);
-
-        let state = drawer_state(&e);
-        assert_eq!(state.current_drawer, 1);
-        assert_eq!(state.next_slot, 1);
-
-        let bitmap = drawer_bitmap(&e, 1);
-        assert_eq!(bitmap.len(), 1);
-        assert_eq!(bitmap.get(0), Some(0b0000_0001));
+        assert_eq!(spend_state(&e, &first), Some(100));
     });
 }
 
 #[test]
-fn creates_pack_status_bits_into_the_same_drawer_bitmap() {
+fn each_created_utxo_gets_its_own_independent_entry() {
     let e = Env::default();
     let contract_id = storage_contract(&e);
 
@@ -104,25 +79,18 @@ fn creates_pack_status_bits_into_the_same_drawer_bitmap() {
             }
         });
 
-        let bitmap = drawer_bitmap(&e, 1);
-        assert_eq!(bitmap.len(), 2);
-        assert_eq!(bitmap.get(0), Some(0b1111_1111));
-        assert_eq!(bitmap.get(1), Some(0b0000_0001));
-
-        let state = drawer_state(&e);
-        assert_eq!(state.current_drawer, 1);
-        assert_eq!(state.next_slot, 9);
-
         for seed in 1..=9 {
-            let meta = metadata(&e, &utxo(&e, seed));
-            assert_eq!(meta.drawer_id, 1);
-            assert_eq!(meta.slot_idx, u32::from(seed - 1));
+            assert_eq!(spend_state(&e, &utxo(&e, seed)), Some(seed as i128));
+            assert_eq!(
+                Store::apply(&e, |store| store.balance(&utxo(&e, seed))),
+                seed as i128
+            );
         }
     });
 }
 
 #[test]
-fn spend_clears_only_the_target_bits_and_preserves_metadata() {
+fn spend_tombstones_only_the_target_and_leaves_other_entries_unspent() {
     let e = Env::default();
     let contract_id = storage_contract(&e);
 
@@ -148,13 +116,10 @@ fn spend_clears_only_the_target_bits_and_preserves_metadata() {
             assert_eq!(store.balance(&third), 0);
         });
 
-        let bitmap = drawer_bitmap(&e, 1);
-        assert_eq!(bitmap.get(0), Some(0b0000_0010));
-
-        let spent_meta = metadata(&e, &first);
-        assert_eq!(spent_meta.amount, 10);
-        assert_eq!(spent_meta.drawer_id, 1);
-        assert_eq!(spent_meta.slot_idx, 0);
+        // Spent UTXOs are tombstoned to 0; the untouched one keeps its amount.
+        assert_eq!(spend_state(&e, &first), Some(0));
+        assert_eq!(spend_state(&e, &second), Some(20));
+        assert_eq!(spend_state(&e, &third), Some(0));
     });
 }
 
@@ -178,125 +143,38 @@ fn created_utxo_can_be_read_and_spent_inside_the_same_scope() {
 }
 
 #[test]
-fn rotates_to_the_next_drawer_when_the_current_drawer_is_full() {
+fn create_spend_and_balance_bump_persistent_ttl() {
+    // MOON-02: the per-UTXO spend-state entry must be pushed to the long (30-day) TTL window so it
+    // cannot archive while the channel is live. Each UTXO's liveness is independent: create, spend,
+    // and even a plain balance read by the holder refresh its own entry's TTL.
     let e = Env::default();
     let contract_id = storage_contract(&e);
 
     in_contract(&e, &contract_id, || {
         let key = utxo(&e, 1);
-
-        e.storage().persistent().set(
-            &DrawerDataKey::State,
-            &DrawerState {
-                current_drawer: 1,
-                next_slot: Store::SLOTS_PER_DRAWER,
-            },
-        );
-
-        Store::apply(&e, |store| store.create(&key, 100));
-
-        let meta = metadata(&e, &key);
-        assert_eq!(meta.drawer_id, 2);
-        assert_eq!(meta.slot_idx, 0);
-
-        let state = drawer_state(&e);
-        assert_eq!(state.current_drawer, 2);
-        assert_eq!(state.next_slot, 1);
-
-        let bitmap = drawer_bitmap(&e, 2);
-        assert_eq!(bitmap.len(), 1);
-        assert_eq!(bitmap.get(0), Some(0b0000_0001));
-    });
-}
-
-#[test]
-fn create_and_spend_bump_persistent_ttl() {
-    // MOON-02: UTXO metadata, the shared drawer bitmap, and the allocation-state entry must be
-    // pushed to the long (30-day) TTL window so they cannot archive while the channel is live.
-    let e = Env::default();
-    let contract_id = storage_contract(&e);
-
-    in_contract(&e, &contract_id, || {
-        let key = utxo(&e, 1);
-        let uk = UTXOCoreDataKey::UTXO(hash_utxo_key(&e, &key));
-
-        Store::apply(&e, |store| store.create(&key, 100));
-
+        let uk = utxo_key(&e, &key);
         let min_ttl = Store::PERSISTENT_BUMP_AMOUNT - Store::DAY_IN_LEDGERS;
-        assert!(e.storage().persistent().get_ttl(&uk) >= min_ttl);
-        assert!(e.storage().persistent().get_ttl(&Store::drawer_key(1)) >= min_ttl);
-        assert!(e.storage().persistent().get_ttl(&DrawerDataKey::State) >= min_ttl);
 
-        // Spending keeps the now-spent record alive (so it cannot be recreated post-archival).
+        Store::apply(&e, |store| store.create(&key, 100));
+        assert!(e.storage().persistent().get_ttl(&uk) >= min_ttl);
+
+        // A balance read alone keeps the holder's entry alive.
+        e.ledger().with_mut(|l| l.sequence_number += 1);
+        Store::apply(&e, |store| store.balance(&key));
+        assert!(e.storage().persistent().get_ttl(&uk) >= min_ttl);
+
+        // Spending keeps the now-spent tombstone alive (so it cannot be recreated post-archival).
         Store::apply(&e, |store| {
             store.spend(&key);
         });
+        assert_eq!(spend_state(&e, &key), Some(0));
         assert!(e.storage().persistent().get_ttl(&uk) >= min_ttl);
     });
 }
 
 #[test]
 #[should_panic]
-fn bitmap_byte_index_rejects_slot_outside_drawer() {
-    let e = Env::default();
-    let contract_id = storage_contract(&e);
-
-    in_contract(&e, &contract_id, || {
-        Store::apply(&e, |store| {
-            store.bitmap_byte_index(Store::SLOTS_PER_DRAWER);
-        });
-    });
-}
-
-#[test]
-#[should_panic]
-fn balance_rejects_utxo_metadata_with_slot_outside_drawer() {
-    let e = Env::default();
-    let contract_id = storage_contract(&e);
-
-    in_contract(&e, &contract_id, || {
-        let key = utxo(&e, 1);
-        let uk = UTXOCoreDataKey::UTXO(hash_utxo_key(&e, &key));
-
-        e.storage().persistent().set(
-            &uk,
-            &UtxoMeta {
-                amount: 100,
-                drawer_id: 1,
-                slot_idx: Store::SLOTS_PER_DRAWER,
-            },
-        );
-
-        Store::apply(&e, |store| store.balance(&key));
-    });
-}
-
-#[test]
-#[should_panic]
-fn spend_rejects_utxo_metadata_with_slot_outside_drawer() {
-    let e = Env::default();
-    let contract_id = storage_contract(&e);
-
-    in_contract(&e, &contract_id, || {
-        let key = utxo(&e, 1);
-        let uk = UTXOCoreDataKey::UTXO(hash_utxo_key(&e, &key));
-
-        e.storage().persistent().set(
-            &uk,
-            &UtxoMeta {
-                amount: 100,
-                drawer_id: 1,
-                slot_idx: Store::SLOTS_PER_DRAWER,
-            },
-        );
-
-        Store::apply(&e, |store| store.spend(&key));
-    });
-}
-
-#[test]
-#[should_panic]
-fn create_rejects_duplicate_utxo_metadata_even_after_spend() {
+fn create_rejects_duplicate_utxo_even_after_spend() {
     let e = Env::default();
     let contract_id = storage_contract(&e);
 
@@ -308,6 +186,7 @@ fn create_rejects_duplicate_utxo_metadata_even_after_spend() {
             store.spend(&key);
         });
 
+        // The spent tombstone blocks recreation.
         Store::apply(&e, |store| store.create(&key, 100));
     });
 }
