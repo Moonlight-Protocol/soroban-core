@@ -12,7 +12,7 @@ jobs:
 
       - name: Read pinned Rust version
         id: rust-version
-        run: echo "channel=$(grep -m1 '^channel' rust-toolchain.toml | cut -d'"' -f2)" >> "$GITHUB_OUTPUT"
+        run: echo "channel=$(grep -m1 -E '^[[:space:]]*channel[[:space:]]*=' rust-toolchain.toml | cut -d\" -f2)" >> "$GITHUB_OUTPUT"
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@master
