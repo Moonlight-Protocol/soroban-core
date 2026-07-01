@@ -13,110 +13,40 @@ Store::apply(env, |store| {
 });
 ```
 
-Callers do not construct storage directly and do not commit changes manually.
-`Store::apply` creates the scoped storage handle, lets the caller perform one
-logical group of operations, and commits dirty drawer data after the closure
-returns.
+Callers do not construct storage directly. `Store::apply` creates the scoped
+storage handle and lets the caller perform one logical group of operations. Each
+operation writes its own per-UTXO entry directly — there is no deferred commit
+step.
 
-## Why This Storage Exists
+## Storage Model
 
-A straightforward UTXO storage model would store the full state for each UTXO:
-
-```text
-UTXO(hash(pubkey)) -> Unspent(amount) | Spent
-```
-
-That model is simple, but it scales writes with the number of UTXOs spent. If a
-transaction spends 20 UTXOs, it needs to update 20 independent storage entries
-just to mark them as spent.
-
-Moonlight expects many UTXOs to be created and spent in clustered flows. UTXOs
-created close together are likely to be spent together because the protocol is
-normally used in ordered batches. The drawer layout exploits that locality.
-Instead of storing the mutable spent/unspent flag in every UTXO entry, it stores
-that flag as one bit inside a shared drawer bitmap.
-
-This means a transaction that spends several UTXOs from the same drawer can
-update several bits and write one drawer entry back. The main benefit is
-reducing the number of mutable storage entries written during clustered spends,
-which matters because network limits and fees are sensitive to storage entries
-touched and written.
-
-## Storage Layout
-
-Each UTXO has one metadata entry:
+Each UTXO owns a single persistent entry, keyed by the hash of its 65-byte
+public key, whose value is the UTXO's amount:
 
 ```text
-UTXOCoreDataKey::UTXO(sha256(pubkey65)) -> UtxoMeta
+UTXOCoreDataKey::UTXO(sha256(pubkey65)) -> i128 amount
 ```
 
-The metadata stores:
+The amount value carries the full spend state:
 
-```rust
-UtxoMeta {
-    amount: i128,
-    drawer_id: u32,
-    slot_idx: u32,
-}
-```
+- a **positive** value means the UTXO is **unspent** (and is its amount);
+- `0` means the UTXO has been **spent** (a tombstone that is kept, not deleted);
+- an **absent** entry means **no record exists** for that key.
 
-The metadata tells the storage module:
-
-- the UTXO amount;
-- which drawer bitmap contains its spent/unspent flag;
-- which bit inside that drawer represents this UTXO.
-
-The drawer bitmap stores only status:
-
-```text
-DrawerDataKey::Drawer(DrawerKey { id }) -> Bytes bitmap
-```
-
-Inside the bitmap:
-
-- bit set to `1` means the UTXO is unspent;
-- bit set to `0` means the UTXO is spent or the slot has not been allocated.
-
-There is also one drawer allocator state entry:
-
-```text
-DrawerDataKey::State -> DrawerState {
-    current_drawer,
-    next_slot,
-}
-```
-
-`current_drawer` identifies where new UTXOs are currently allocated.
-`next_slot` is the next available slot in that drawer.
-
-## Drawer Size
-
-Each drawer has 524,288 slots:
-
-```rust
-const SLOTS_PER_DRAWER: u32 = 524_288;
-const BITMAP_BYTES: u32 = SLOTS_PER_DRAWER / 8; // 65,536 bytes
-```
-
-One bit represents one UTXO status. One byte therefore represents 8 UTXOs.
-
-The maximum bitmap payload is 65,536 bytes, which is intentionally below the
-128 KiB ledger-entry size limit. The bitmap is not allocated at full size when a
-drawer is created. It grows lazily as higher slot indexes are used, avoiding the
-cost of pushing 65,536 zero bytes when the first UTXO is created.
+Each UTXO has its own entry; no state is shared between entries.
 
 ## Operation Semantics
 
 ### `balance`
 
-`balance(utxo)` reads the UTXO metadata and then reads the corresponding bit in
-the drawer bitmap.
+`balance(utxo)` reads the UTXO's persistent entry and returns:
 
-It returns:
+- a positive amount when the entry exists and is unspent;
+- `0` when the entry exists but has been spent;
+- `-1` when no entry exists for the UTXO key.
 
-- a positive amount when the metadata exists and the drawer bit is set;
-- `0` when the metadata exists but the drawer bit is clear;
-- `-1` when no metadata entry exists for the UTXO key.
+Reading an existing entry refreshes its TTL (see [TTL / keep-alive](#ttl--keep-alive)),
+so a holder keeps their own UTXO alive simply by observing it.
 
 ### `create`
 
@@ -124,15 +54,11 @@ It returns:
 
 The operation:
 
-1. rejects non-positive amounts;
-2. rejects UTXO keys that already have metadata;
-3. allocates the next drawer slot;
-4. writes the UTXO metadata with `amount`, `drawer_id`, and `slot_idx`;
-5. sets the corresponding drawer bitmap bit to `1`;
-6. marks the drawer bitmap and drawer state as dirty in the scoped cache.
-
-The UTXO metadata is stable after creation. The mutable status lives in the
-drawer bitmap.
+1. rejects non-positive amounts (`InvalidCreateAmount`);
+2. rejects any key that already has a record — including a spent (`0`) tombstone,
+   which can never be recreated (`UtxoAlreadyExists`);
+3. writes the per-UTXO entry with `amount`;
+4. refreshes the entry's TTL.
 
 ### `spend`
 
@@ -140,39 +66,24 @@ drawer bitmap.
 
 The operation:
 
-1. reads the UTXO metadata;
-2. loads the drawer bitmap identified by `drawer_id`;
-3. checks the bit at `slot_idx`;
-4. rejects missing or already-spent UTXOs;
-5. clears the bitmap bit to `0`;
-6. marks the drawer bitmap as dirty in the scoped cache.
+1. reads the per-UTXO entry;
+2. rejects a missing UTXO (`UtxoDoesNotExist`) or an already-spent one
+   (`UtxoAlreadySpent`);
+3. tombstones the entry in place by setting its amount to `0` — the entry is
+   **not** deleted, so the spent record keeps blocking re-spend and re-creation;
+4. refreshes the entry's TTL.
 
-The metadata entry is not deleted. Keeping metadata lets the module distinguish
-between a spent UTXO (`0`) and a never-created UTXO (`-1`).
+## TTL / keep-alive
 
-## Scoped Cache
+A UTXO's entry backs user funds and must outlive long idle periods; without an
+explicit bump it would archive. Each of `create`, `spend`, and `balance` extends
+the touched entry's TTL (`PERSISTENT_BUMP_AMOUNT = 30 days`, refreshed when
+within `PERSISTENT_LIFETIME_THRESHOLD`), including the spent tombstone.
 
-The drawer cache is private to the storage module.
-
-During `Store::apply`, the cache:
-
-- loads `DrawerState` only when allocation is needed;
-- loads drawer bitmaps on demand;
-- keeps modified drawer bitmaps in memory;
-- tracks which drawer bitmaps are dirty;
-- writes dirty drawer bitmaps once when the scope completes;
-- writes drawer allocation state once when it changed.
-
-This is what lets a batch update many bits in the same drawer while writing the
-drawer entry once at the end of the scope.
-
-If the closure passed to `Store::apply` panics, the commit step is not reached.
-That is expected: Soroban aborts the invocation, so partial state changes are
-not committed.
+If the closure passed to `Store::apply` panics, the invocation aborts before any
+further writes; Soroban does not commit partial state changes.
 
 ## Public API
-
-Use the scoped API for every storage interaction:
 
 ```rust
 Store::apply(env, |store| {
@@ -187,11 +98,10 @@ Store::apply(env, |store| {
 The public operations are:
 
 - `Store::apply(env, |store| { ... })`: runs one logical group of storage
-  operations with a private drawer cache.
-- `store.balance(utxo)`: reads the current UTXO balance state.
+  operations against a scoped handle.
+- `store.balance(utxo)`: reads the current UTXO balance state (`-1` / `0` / `>0`).
 - `store.create(utxo, amount)`: creates a new unspent UTXO.
 - `store.spend(utxo)`: spends an existing unspent UTXO and returns its amount.
 
 There is intentionally no public cache type, no manual commit API, and no
-alternate storage backend. The storage module owns the drawer layout and cache
-lifecycle internally.
+alternate storage backend. The storage module owns its layout internally.
