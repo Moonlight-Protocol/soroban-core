@@ -22,6 +22,7 @@ fn keeps_auth_errors_in_their_reserved_range() {
         Error::ProviderThresholdNotMet.code(),
         Error::ProviderAlreadyRegistered.code(),
         Error::ProviderNotRegistered.code(),
+        Error::AcceptanceWindowTooLong.code(),
     ] {
         assert!((1_000..=1_099).contains(&code));
     }
