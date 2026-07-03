@@ -102,20 +102,30 @@ pub struct AuthPayload {
 
 /// Constructs the payload for processing a bundle of UTXO operations.
 ///
-/// The payload is built by concatenating in order:
-///  - The contract address (32 bytes),
-///  - followed by all `create` conditions,
-///  - followed by all `deposit` conditions,
-///  - followed by all `withdraw` conditions,
-///  - followed by all `integration` conditions.
+/// The payload is built by concatenating, in this fixed order:
+///  1. the `contract` address bytes (the ~56-byte strkey string as passed in),
+///  2. all `Create` conditions,
+///  3. all `ExtDeposit` conditions,
+///  4. all `ExtWithdraw` conditions,
+///  5. all `ExtIntegration` conditions,
+///  6. the `live_until_ledger` (4-byte little-endian `u32`).
+///
+/// Conditions are grouped into per-type buckets (create / deposit / withdraw /
+/// integration) regardless of their order in the original bundle; only the order
+/// *within* each bucket follows the original bundle order.
+///
+/// Each condition serializes its fields as follows (amounts are `i128`, encoded
+/// as 16-byte little-endian sequences):
+///  - `Create(utxo, amount)`: 65-byte UTXO id, then 16-byte LE amount.
+///  - `ExtDeposit(addr, amount)`: the address as its ~56-byte strkey string
+///    (`addr.to_string().to_bytes()`), then 16-byte LE amount.
+///  - `ExtWithdraw(addr, amount)`: same layout as `ExtDeposit`.
+///  - `ExtIntegration(adapter, utxos, amount)`: the adapter address as its
+///    ~56-byte strkey string, then each 65-byte UTXO id in order, then 16-byte
+///    LE amount.
 ///
 /// The resulting byte stream is hashed using SHA-256 to produce a digest that is
 /// used for verifying the signatures of the bundle.
-///
-/// For consistency, all integer amounts are encoded as little-endian 8-byte sequences.
-/// UTXO identifiers are represented as their raw byte arrays. Also it is suggested to sort
-/// the conditions in the same ordering as they are defined in the original bundle  to ensure
-/// deterministic payloads.
 ///
 pub fn hash_payload(e: &Env, auth_payload: &AuthPayload, contract: &Bytes) -> Hash<32> {
     let mut b = Bytes::new(&e);
