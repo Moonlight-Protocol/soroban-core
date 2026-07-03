@@ -550,3 +550,67 @@ fn test_transfer_with_additional_auth_conditions() {
     assert_eq!(client.utxo_balance(&utxo_d.public_key.clone()), 450_i128);
     assert_eq!(client.utxo_balance(&utxo_e.public_key.clone()), 450_i128);
 }
+
+// B2: the conservation accumulator uses checked_add on the spend side, so a bundle whose input
+// sum exceeds i128::MAX yields the mapped AmountOverflow error instead of depending on the
+// environment's overflow panic (which a consumer compiling with overflow-checks off would lose).
+#[test]
+fn test_process_bundle_accumulator_overflow() {
+    let e = Env::default();
+    let (client, _) = create_contract_with_mocked_auth(&e);
+
+    let utxo_a = P256KeyPair::generate(&e);
+    let utxo_b = P256KeyPair::generate(&e);
+
+    // Two inputs whose sum overflows i128 once accumulated.
+    client.mint(&vec![&e, (utxo_a.public_key.clone(), i128::MAX)]);
+    client.mint(&vec![&e, (utxo_b.public_key.clone(), i128::MAX)]);
+
+    let op = UTXOOperation {
+        create: vec![&e],
+        spend: vec![
+            &e,
+            (utxo_a.public_key.clone(), vec![&e]),
+            (utxo_b.public_key.clone(), vec![&e]),
+        ],
+    };
+
+    let overflow_error = client.mock_all_auths().try_transact(&op);
+
+    assert_eq!(
+        overflow_error.err(),
+        Some(Ok(Error::from_contract_error(
+            ContractError::AmountOverflow as u32
+        )))
+    );
+}
+
+// B2: the create side uses checked_sub, so a bundle whose created amounts drive the accumulator
+// below i128::MIN yields the mapped AmountUnderflow error rather than relying on the env panic.
+#[test]
+fn test_process_bundle_accumulator_underflow() {
+    let e = Env::default();
+    let (client, _) = create_contract_with_mocked_auth(&e);
+
+    let utxo_a = P256KeyPair::generate(&e);
+    let utxo_b = P256KeyPair::generate(&e);
+
+    // No inputs; two creates near i128::MAX subtract past i128::MIN.
+    let op = UTXOOperation {
+        create: vec![
+            &e,
+            (utxo_a.public_key.clone(), i128::MAX),
+            (utxo_b.public_key.clone(), i128::MAX),
+        ],
+        spend: vec![&e],
+    };
+
+    let underflow_error = client.mock_all_auths().try_transact(&op);
+
+    assert_eq!(
+        underflow_error.err(),
+        Some(Ok(Error::from_contract_error(
+            ContractError::AmountUnderflow as u32
+        )))
+    );
+}
