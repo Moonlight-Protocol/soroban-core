@@ -104,25 +104,18 @@ pub struct AuthPayload {
 ///
 /// The payload is built by concatenating, in this fixed order:
 ///  1. the `contract` address bytes (the ~56-byte strkey string as passed in),
-///  2. all `Create` conditions,
-///  3. all `ExtDeposit` conditions,
-///  4. all `ExtWithdraw` conditions,
-///  5. all `ExtIntegration` conditions,
-///  6. the `live_until_ledger` (4-byte little-endian `u32`).
+///  2. the canonical XDR encoding of the ordered `Vec<Condition>` (`ToXdr`),
+///  3. the `live_until_ledger` (4-byte little-endian `u32`).
 ///
-/// Conditions are grouped into per-type buckets (create / deposit / withdraw /
-/// integration) regardless of their order in the original bundle; only the order
-/// *within* each bucket follows the original bundle order.
-///
-/// Each condition serializes its fields as follows (amounts are `i128`, encoded
-/// as 16-byte little-endian sequences):
-///  - `Create(utxo, amount)`: 65-byte UTXO id, then 16-byte LE amount.
-///  - `ExtDeposit(addr, amount)`: the address as its ~56-byte strkey string
-///    (`addr.to_string().to_bytes()`), then 16-byte LE amount.
-///  - `ExtWithdraw(addr, amount)`: same layout as `ExtDeposit`.
-///  - `ExtIntegration(adapter, utxos, amount)`: the adapter address as its
-///    ~56-byte strkey string, then each 65-byte UTXO id in order, then 16-byte
-///    LE amount.
+/// The condition list is serialized with `ToXdr` — the same self-delimiting
+/// on-wire representation that `equal_condition_sequence` compares against.
+/// Because XDR length-prefixes vectors and tags every enum variant, the encoding
+/// is **injective**: two distinct condition lists can never hash to the same
+/// bytes. In particular an `ExtDeposit(X, a)` and an `ExtWithdraw(X, a)` over the
+/// same address and amount now hash differently (the prior per-type bucket
+/// concatenation made them byte-identical), and reordering the conditions changes
+/// the hash — the digest binds the exact ordering the signer reviewed. The order
+/// is therefore preserved as-is; conditions are never sorted or canonicalized.
 ///
 /// The resulting byte stream is hashed using SHA-256 to produce a digest that is
 /// used for verifying the signatures of the bundle.
@@ -131,38 +124,11 @@ pub fn hash_payload(e: &Env, auth_payload: &AuthPayload, contract: &Bytes) -> Ha
     let mut b = Bytes::new(&e);
     b.append(&contract);
 
-    let mut b_create = Bytes::new(&e);
-    let mut b_deposit = Bytes::new(&e);
-    let mut b_withdraw = Bytes::new(&e);
-    let mut b_integrate = Bytes::new(&e);
-
-    for cond in auth_payload.conditions.iter() {
-        match cond {
-            Condition::Create(utxo, amount) => {
-                b_create.append(&Bytes::from_slice(&e, utxo.to_array().as_ref()));
-                b_create.append(&Bytes::from_slice(&e, &amount.to_le_bytes()));
-            }
-            Condition::ExtDeposit(addr, amount) => {
-                b_deposit.append(&addr.to_string().to_bytes());
-                b_deposit.append(&Bytes::from_slice(&e, &amount.to_le_bytes()));
-            }
-            Condition::ExtWithdraw(addr, amount) => {
-                b_withdraw.append(&addr.to_string().to_bytes());
-                b_withdraw.append(&Bytes::from_slice(&e, &amount.to_le_bytes()));
-            }
-            Condition::ExtIntegration(adapter, utxos, amount) => {
-                b_integrate.append(&adapter.to_string().to_bytes());
-                for utxo in utxos.iter() {
-                    b_integrate.append(&Bytes::from_slice(&e, utxo.to_array().as_ref()));
-                }
-                b_integrate.append(&Bytes::from_slice(&e, &amount.to_le_bytes()));
-            }
-        }
-    }
-    b.append(&b_create);
-    b.append(&b_deposit);
-    b.append(&b_withdraw);
-    b.append(&b_integrate);
+    // Canonical, order-sensitive XDR of the condition list. XDR is self-delimiting
+    // (length-prefixed vectors, variant-tagged enums), so distinct condition lists
+    // always produce distinct bytes — closing the deposit/withdraw and reordering
+    // collisions that the previous back-to-back bucket concatenation allowed.
+    b.append(&auth_payload.conditions.clone().to_xdr(e));
 
     b.append(&Bytes::from_slice(
         &e,
@@ -248,4 +214,93 @@ pub fn has_no_conflicting_conditions_in_sets(
         }
     }
     true
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use soroban_sdk::{testutils::Address as _, vec, Address, Env};
+
+    fn contract_bytes(e: &Env) -> Bytes {
+        Address::generate(e).to_string().to_bytes()
+    }
+
+    /// A1: a deposit and a withdraw over the same (address, amount) previously
+    /// concatenated into separate buckets and hashed to byte-identical payloads,
+    /// letting a signed deposit be reinterpreted as a withdraw at tx-build time.
+    /// The XDR encoding tags the variant, so the two now hash differently.
+    #[test]
+    fn deposit_and_withdraw_over_same_address_amount_hash_differently() {
+        let e = Env::default();
+        let contract = contract_bytes(&e);
+        let addr = Address::generate(&e);
+        let amount: i128 = 1_000;
+
+        let deposit = AuthPayload {
+            conditions: vec![&e, Condition::ExtDeposit(addr.clone(), amount)],
+            live_until_ledger: 100,
+        };
+        let withdraw = AuthPayload {
+            conditions: vec![&e, Condition::ExtWithdraw(addr.clone(), amount)],
+            live_until_ledger: 100,
+        };
+
+        assert_ne!(
+            hash_payload(&e, &deposit, &contract).to_bytes(),
+            hash_payload(&e, &withdraw, &contract).to_bytes(),
+            "Dep(X,a) and Wd(X,a) must not share a signed digest"
+        );
+    }
+
+    /// A cross-type reordering the old bucket layout ignored (deposit and withdraw
+    /// land in fixed buckets regardless of input order). XDR preserves list order,
+    /// so the digest now binds exactly the ordering the signer reviewed.
+    #[test]
+    fn reordering_conditions_changes_the_hash() {
+        let e = Env::default();
+        let contract = contract_bytes(&e);
+        let a = Address::generate(&e);
+        let b = Address::generate(&e);
+
+        let dep = Condition::ExtDeposit(a, 10);
+        let wd = Condition::ExtWithdraw(b, 20);
+
+        let forward = AuthPayload {
+            conditions: vec![&e, dep.clone(), wd.clone()],
+            live_until_ledger: 100,
+        };
+        let reversed = AuthPayload {
+            conditions: vec![&e, wd, dep],
+            live_until_ledger: 100,
+        };
+
+        assert_ne!(
+            hash_payload(&e, &forward, &contract).to_bytes(),
+            hash_payload(&e, &reversed, &contract).to_bytes(),
+            "condition ordering must be bound by the digest"
+        );
+    }
+
+    /// The encoding stays deterministic: identical payloads hash identically, so
+    /// the existing signature-verification path is unaffected.
+    #[test]
+    fn identical_payloads_hash_identically() {
+        let e = Env::default();
+        let contract = contract_bytes(&e);
+        let addr = Address::generate(&e);
+
+        let build = || AuthPayload {
+            conditions: vec![
+                &e,
+                Condition::ExtDeposit(addr.clone(), 42),
+                Condition::Create(BytesN::from_array(&e, &[7u8; 65]), 99),
+            ],
+            live_until_ledger: 555,
+        };
+
+        assert_eq!(
+            hash_payload(&e, &build(), &contract).to_bytes(),
+            hash_payload(&e, &build(), &contract).to_bytes(),
+        );
+    }
 }
