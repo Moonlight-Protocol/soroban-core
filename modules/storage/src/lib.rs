@@ -33,8 +33,7 @@ impl Store {
     // has its own entry, a holder keeps their own UTXO alive independently of everyone else.
     const DAY_IN_LEDGERS: u32 = 17_280;
     const PERSISTENT_BUMP_AMOUNT: u32 = 30 * Self::DAY_IN_LEDGERS;
-    const PERSISTENT_LIFETIME_THRESHOLD: u32 =
-        Self::PERSISTENT_BUMP_AMOUNT - Self::DAY_IN_LEDGERS;
+    const PERSISTENT_LIFETIME_THRESHOLD: u32 = Self::PERSISTENT_BUMP_AMOUNT - Self::DAY_IN_LEDGERS;
 
     /// Runs UTXO storage operations in a scoped store.
     ///
