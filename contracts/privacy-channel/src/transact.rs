@@ -214,6 +214,13 @@ pub fn execute_external_operations(
     let asset_client = TokenClient::new(e, &asset);
 
     for (from, amount, deposit_conditions) in deposit.iter() {
+        // B10: the channel requires `from` to authorize only `[conditions]`; consent to the
+        // deposit `amount` is delegated to the asset's `transfer`, which requires `from`'s
+        // authorization for the exact `(from, to, amount)` triple. This is sound iff the
+        // channel asset requires `from`'s authorization to move value (true for a compliant
+        // SAC). An asset that can move value without `from`'s authorization must not be used
+        // as a channel asset — nothing at the channel layer binds the amount to the
+        // depositor's consent (see `contracts/arch.md`, Asset SAC trust assumption).
         from.require_auth_for_args(vec![&e, deposit_conditions.into_val(e)]);
         asset_client.transfer(&from, &e.current_contract_address(), &amount);
         increase_supply(&e, amount);
