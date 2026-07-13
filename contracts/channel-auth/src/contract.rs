@@ -1,5 +1,6 @@
 use moonlight_auth::core::{ProviderAuthorizable, UtxoAuthorizable};
 use moonlight_errors::Error as MoonlightError;
+use moonlight_helpers::parser::address_to_ed25519_pk_bytes;
 
 use moonlight_primitives::Signatures;
 use soroban_sdk::{
@@ -109,8 +110,18 @@ impl ChannelAuthContract {
         <Self as ProviderAuthorizable>::is_provider(e, provider)
     }
 
+    /// Registers a provider. Only an Ed25519 account address can be registered: the provider
+    /// check in `require_provider` matches exclusively addresses derived from `SignerKey::
+    /// Provider` Ed25519 keys, so any other address kind (e.g. a contract address) would be
+    /// registered — and reported registered by `is_provider` — yet could never authorize
+    /// anything (RV audit B7).
+    ///
+    /// ### Panics
+    /// - Panics `NotEd25519AccountAddress` if `provider` is a contract address.
+    /// - Panics if the provider is already registered.
     pub fn add_provider(e: &Env, provider: Address) {
         ownable::enforce_owner_auth(e);
+        address_to_ed25519_pk_bytes(e, &provider);
         let addr = provider.clone();
         Self::register_provider(e, provider);
         ProviderAdded { provider: addr }.publish(e);
