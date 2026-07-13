@@ -81,6 +81,35 @@ fn test_mint_and_burn() {
     );
 }
 
+/// Audit A2: minting a UTXO whose key is not an SEC1 uncompressed (`0x04`-tagged)
+/// P-256 point encoding is rejected at the `Store::create` guard with the exact
+/// `InvalidUtxoKey` error, and a well-formed key is still accepted.
+#[test]
+fn test_mint_rejects_malformed_utxo_key() {
+    let e = Env::default();
+    let (client, _) = create_contract_with_mocked_auth(&e);
+
+    // Leading marker byte is 0x02 (compressed tag), not 0x04 — malformed.
+    let mut bytes = [1u8; 65];
+    bytes[0] = 2;
+    let malformed_key = soroban_sdk::BytesN::<65>::from_array(&e, &bytes);
+
+    let expected_error = client.try_mint(&vec![&e, (malformed_key.clone(), 100_i128)]);
+    assert_eq!(
+        expected_error.err(),
+        Some(Ok(Error::from_contract_error(
+            ContractError::InvalidUtxoKey as u32
+        )))
+    );
+    // Rejected before any record was written.
+    assert_eq!(client.utxo_balance(&malformed_key), -1_i128);
+
+    // A well-formed 0x04-tagged key is still accepted.
+    let valid = P256KeyPair::generate(&e);
+    client.mint(&vec![&e, (valid.public_key.clone(), 100_i128)]);
+    assert_eq!(client.utxo_balance(&valid.public_key), 100_i128);
+}
+
 #[test]
 fn test_transfer() {
     let e = Env::default();
