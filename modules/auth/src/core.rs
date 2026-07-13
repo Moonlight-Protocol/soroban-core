@@ -86,6 +86,13 @@ pub trait UtxoAuthorizable {
                     // requirements, but it must only skip THIS context — never short-circuit the
                     // whole check. A `return Ok(())` here would let an empty-args context that
                     // precedes a spend-bearing context bypass the latter's P256 verification.
+                    //
+                    // RV audit B8 (deliberate): because argument-less contexts skip the UTXO
+                    // check entirely, their only gate is the single provider signature verified
+                    // by `require_provider`. This is intended for the channel's spend-free path
+                    // (bundles with no UTXO spends). A contract should name this account as
+                    // authorizer only where a one-provider-signature gate on an argument-less
+                    // invocation is acceptable.
                     continue;
                 }
 
@@ -105,6 +112,14 @@ pub trait UtxoAuthorizable {
                     }
 
                     match signer.clone() {
+                        // RV audit B9: the P256 verification below carries no replay protection
+                        // of its own — `__check_auth` keeps no nonce or used-signature state, so
+                        // an identical (conditions, valid_until_ledger, signature) tuple verifies
+                        // again on every call until expiry. Single-use must come from the
+                        // requesting contract: the privacy channel provides it by tombstoning
+                        // each spent UTXO, so a replayed spend fails there. Any other contract
+                        // naming this account as authorizer must supply its own single-use
+                        // mechanism.
                         SignerKey::P256(_signer_pk) => {
                             // Lookup signature by key.
 
@@ -212,6 +227,13 @@ pub trait ProviderAuthorizable {
                     Self::is_provider(&e, provider_addr.clone()),
                     Error::ProviderNotRegistered
                 );
+                // RV audit B6: this `valid_until_ledger` comes from the Signatures map, which
+                // the transaction submitter assembles — it is NOT covered by the provider's
+                // Ed25519 signature. That signature is verified against `payload`, the host's
+                // authorization-entry preimage, whose signature_expiration_ledger the host
+                // itself enforces; the binding provider deadline lives there. This in-contract
+                // check is a second, non-binding deadline the submitter can set freely — do not
+                // read it as a provider-signed expiry.
                 let (sig_variant, valid_until_ledger) =
                     sig_map.get(signer.clone()).ok_or(Error::MissingSignature)?;
 
