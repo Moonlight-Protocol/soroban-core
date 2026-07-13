@@ -303,6 +303,13 @@ Known invariant gap in CA-7: `upgrade` does not emit an explicit Moonlight event
 - **PC-13 (depositor consent).** Every `ExtDeposit` requires `from.require_auth_for_args(vec![&e, conditions])`. The depositor cannot have funds pulled from their account without explicitly signing for the exact condition list. *Enforced by `transact.rs:122`.*
 - **PC-14 (withdrawal authorization).** All withdrawals are authorized inside the bundle's `__check_auth` call (every spent UTXO's owner signed conditions covering the withdrawal). The contract itself self-authorizes the SAC transfer call via `authorize_as_current_contract`, which is sound only if `__check_auth` has already validated the bundle. *Enforced by ordering in `transact()` — pre_process and process_bundle precede `execute_external_operations`.*
 - **PC-15 (atomicity).** The three phases (`pre_process`, `process_bundle`, `execute_external_operations`) execute within a single Soroban transaction; any panic reverts everything. *Implicit from Soroban semantics.*
+- **PC-16 (signed-effects binding, MOON-01).** Every `Create` / `ExtWithdraw` condition signed by a spend owner (P256) or depositor (Ed25519) must appear exactly (same `utxo|addr` + amount) in the bundle's executed creates/withdraws. Extra executed effects are allowed (the provider fee) and are bounded by PC-4 to the residual the signers left unallocated. *Enforced by `assert_signed_effects_are_executed` in `transact.rs`.*
+
+Known constraint on PC-16 (RV audit A3, accepted): the binding compares conditions as a **set keyed by canonical XDR bytes**, so byte-identical conditions collapse to one entry, discharged by a single executed occurrence — while PC-4 still counts every spent/deposited amount in full. If two independently signed spends each demand the identical `ExtWithdraw(to, amount)`, a bundle containing both pays `to` once and the difference becomes unsigned residual the composer allocates. This is deliberately **not** enforced in-contract; it is a trust-boundary constraint on the composer (already a semi-trusted role — see PC-14 and §5):
+
+- Byte-identical execution-bound conditions from distinct signers must never share a bundle.
+- Screening co-batched conditions for byte-identical collisions is the submitter/composer's responsibility.
+- Recurring or shared identical effects (several parties withdrawing a common amount to a shared address; fixed-amount recurring payments) settle safely only in separate bundles.
 
 ### 4.3 Cross-contract invariants
 
