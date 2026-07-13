@@ -88,6 +88,8 @@ pub enum MoonlightError {
     InvalidExternalAmount = 3_007,
     /// `transact` was re-entered while a call was already in progress.
     ReentrantCall = 3_008,
+    /// A withdrawal names the channel's own address as its recipient.
+    WithdrawToChannelAddress = 3_009,
 
     // Helper errors: 4000-4099.
     /// An address payload was expected to be an Ed25519 account address but was not.

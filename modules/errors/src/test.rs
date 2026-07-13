@@ -53,6 +53,7 @@ fn keeps_channel_errors_in_their_reserved_range() {
         Error::AmountOverflow.code(),
         Error::BundleHasConflictingConditions.code(),
         Error::AmountUnderflow.code(),
+        Error::WithdrawToChannelAddress.code(),
     ] {
         assert!((3_000..=3_099).contains(&code));
     }

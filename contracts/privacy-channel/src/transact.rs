@@ -179,6 +179,19 @@ fn verify_external_operations(
         panic_with_error!(&e, Error::RepeatedAccountForWithdraw);
     }
 
+    // B11: a withdrawal naming the channel itself would execute as
+    // `transfer(channel, channel, amount)` — a net-zero token move — while `Supply` still
+    // decrements, burning UTXO claims without any tokens leaving. The resulting surplus
+    // (token balance above `Supply`) is unreachable through `transact`, so reject the
+    // self-withdraw outright. The direct-transfer variant — sending tokens straight to the
+    // channel address outside `transact` — cannot be prevented here; such tokens are inert
+    // surplus above `Supply`, recoverable only by an admin upgrade.
+    for (to, _amount, _conditions) in withdraw.iter() {
+        if to == e.current_contract_address() {
+            panic_with_error!(&e, Error::WithdrawToChannelAddress);
+        }
+    }
+
     // If an address is both depositing and withdrawing, the condition sequences must be identical (order + content).
     for (dep_addr, _, dep_conds) in deposit.iter() {
         for (with_addr, _amt, with_conds) in withdraw.iter() {
