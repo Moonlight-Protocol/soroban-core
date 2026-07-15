@@ -132,6 +132,18 @@ impl ChannelAuthContract {
 impl ChannelAuthContract {
     /// Enable an asset `channel` for service. Also used to RE-ENABLE a previously disabled
     /// channel — both resume full service, so both emit `ChannelStateChanged { enabled: true }`.
+    ///
+    /// # Advisory lifecycle — event-only, no on-chain enforcement (RV audit B12)
+    ///
+    /// The channel lifecycle is **advisory**. This function only emits
+    /// `ChannelStateChanged`, signalling the council's *intended* channel state; the
+    /// contract intentionally stores no channel/asset state, and no on-chain code path
+    /// reads the event. Enforcement lives provider-side: providers treat a disabled
+    /// channel as withdraw-only (new deposits and sends rejected, withdrawals served).
+    /// The sole on-chain way to stop a channel is a contract `upgrade`.
+    ///
+    /// An on-chain enabled-flag with `transact` gating (e.g. block new deposits while
+    /// still allowing withdrawals) is deferred future work.
     pub fn enable_channel(e: &Env, channel: Address, asset: Address) {
         ownable::enforce_owner_auth(e);
         ChannelStateChanged {
@@ -144,6 +156,18 @@ impl ChannelAuthContract {
 
     /// Disable an asset `channel`. The channel becomes withdraw-only (new deposits/sends rejected);
     /// that enforcement lives provider-side. Emits `ChannelStateChanged { enabled: false }`.
+    ///
+    /// # Advisory lifecycle — event-only, no on-chain enforcement (RV audit B12)
+    ///
+    /// The channel lifecycle is **advisory**. This function does NOT stop the channel
+    /// on-chain: it only emits `ChannelStateChanged`, signalling the council's
+    /// *intended* channel state. The contract intentionally stores no channel/asset
+    /// state, and `transact` on the privacy channel remains fully functional after this
+    /// call. Enforcement lives provider-side: providers treat a disabled channel as
+    /// withdraw-only. The sole on-chain way to stop a channel is a contract `upgrade`.
+    ///
+    /// An on-chain enabled-flag with `transact` gating (e.g. block new deposits while
+    /// still allowing withdrawals) is deferred future work.
     pub fn disable_channel(e: &Env, channel: Address, asset: Address) {
         ownable::enforce_owner_auth(e);
         ChannelStateChanged {
