@@ -100,14 +100,18 @@ pub fn pre_process_channel_operation(
 ///
 /// Compared by canonical XDR bytes with set (dedup) semantics, so a multi-spend bundle where each
 /// spend repeats (or partitions) the output set is accepted as long as every signed effect appears
-/// in the executed effects. A signer's outputs therefore cannot be dropped, reduced, amount-changed,
-/// or redirected (any of those removes the exact `(utxo|addr, amount)` key from `executed`).
+/// in the executed effects. Conditions can deliberately repeat and overlap across multiple
+/// operations — this helps obfuscate which condition belongs to which signer and opens up
+/// different composition strategies. A signer's outputs still cannot be dropped, reduced,
+/// amount-changed, or redirected (any of those removes the exact `(utxo|addr, amount)` key from
+/// `executed`).
 ///
 /// ### Batching constraint (RV audit A3)
-/// The set semantics collapse byte-identical conditions to one entry: if two *independently signed*
-/// spends each demand the identical `ExtWithdraw(to, amount)`, a bundle containing both discharges
-/// them with a single executed withdrawal, while the balance check still counts both spent amounts
-/// in full — the difference becomes residual the composer allocates like a fee. This is NOT
+/// The set semantics collapse byte-identical conditions to one entry — the contract considers them
+/// one single operation: if two *independently signed* spends each demand the identical
+/// `ExtWithdraw(to, amount)`, a bundle containing both discharges them with a single executed
+/// withdrawal (e.g. two conditions each for a withdraw of 10 tokens to address A enforce one
+/// single withdraw of 10), while the balance check still counts both spent amounts in full — the difference becomes residual the composer allocates like a fee. This is NOT
 /// enforced against in-contract; it is an accepted trust-boundary constraint on the composer
 /// (already a semi-trusted role — see PC-14 / A3 in `contracts/arch.md`):
 /// - Byte-identical execution-bound conditions from distinct signers must never share a bundle.
