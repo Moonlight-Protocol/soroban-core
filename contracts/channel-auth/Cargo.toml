@@ -17,6 +17,7 @@ stellar-access = { workspace = true }
 stellar-contract-utils = { workspace = true }
 moonlight-auth  = { workspace = true}
 moonlight-errors = { workspace = true}
+moonlight-helpers = { workspace = true}
 moonlight-primitives  = { workspace = true}
 
 

@@ -1,3 +1,4 @@
+use moonlight_helpers::testutils::keys::Ed25519Account;
 use soroban_sdk::{
     testutils::{Address as _, Events, MockAuth, MockAuthInvoke},
     Address, Env, Event, IntoVal,
@@ -102,7 +103,7 @@ fn test_constructor_emits_initialized_event() {
 fn test_add_provider_emits_event() {
     let e = Env::default();
     let (client, admin) = create_contract(&e);
-    let provider = Address::generate(&e);
+    let provider = Ed25519Account::generate(&e).address;
 
     add_provider_with_auth(&client, &admin, &provider, &e);
 
@@ -118,7 +119,7 @@ fn test_add_provider_emits_event() {
 fn test_remove_provider_emits_event() {
     let e = Env::default();
     let (client, admin) = create_contract(&e);
-    let provider = Address::generate(&e);
+    let provider = Ed25519Account::generate(&e).address;
 
     add_provider_with_auth(&client, &admin, &provider, &e);
     remove_provider_with_auth(&client, &admin, &provider, &e);
@@ -135,7 +136,7 @@ fn test_remove_provider_emits_event() {
 fn test_provider_lifecycle_with_events() {
     let e = Env::default();
     let (client, admin) = create_contract(&e);
-    let provider = Address::generate(&e);
+    let provider = Ed25519Account::generate(&e).address;
 
     add_provider_with_auth(&client, &admin, &provider, &e);
     assert!(client.is_provider(&provider));

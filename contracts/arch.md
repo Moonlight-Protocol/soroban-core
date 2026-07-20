@@ -294,6 +294,12 @@ The contracts are intended to uphold each of the following invariants. Where the
 
 Known invariant gap in CA-7: `upgrade` does not emit an explicit Moonlight event from this contract; its audit trail relies on the Stellar transaction record itself. Admin transfer uses OpenZeppelin Ownable events.
 
+Known constraint on CA-2/CA-3 (RV audit B6, accepted): the `valid_until_ledger` paired with each provider signature in the `Signatures` map is **submitter-supplied, not provider-signed** — the provider's Ed25519 signature covers only `payload`, the host's authorization-entry preimage, whose `signature_expiration_ledger` the host itself enforces. The binding provider deadline is that host-layer one; the in-contract expiry check in `require_provider` is a second, non-binding deadline the submitter can set freely. No security impact — the risk is misreading the in-contract field as a provider commitment.
+
+Known constraint on CA-4 (RV audit B8, accepted — deliberate, MOON-03): an argument-less `Context::Contract` carries no `AuthRequirements`, so `handle_utxo_auth` skips it and its only gate is the single provider signature verified by `require_provider`. This is intended for the channel's spend-free path (bundles with no UTXO spends). A contract should name this Channel Auth account as authorizer only where a one-provider-signature gate on an argument-less invocation is acceptable.
+
+Known constraint on CA-4 (RV audit B9, accepted): the P256 signatures verified by `handle_utxo_auth` carry **no replay protection of their own** — `__check_auth` keeps no nonce or used-signature state, so an identical (conditions, `valid_until_ledger`, signature) tuple verifies again on every call until expiry. Single-use is provided by the requesting contract, not by `__check_auth`: the Privacy Channel tombstones each spent UTXO, so a replayed spend fails there. Any other contract naming this account as authorizer must supply its own single-use mechanism.
+
 ### 4.2 Privacy Channel invariants
 
 - **PC-1 (immutable asset binding).** Once set in the constructor, `Asset` is never overwritten by any code path. The only writer is `write_asset_unchecked`, which is only called from `__constructor`. There is no setter exposed externally. *Enforced by code structure.*

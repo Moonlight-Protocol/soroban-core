@@ -25,12 +25,33 @@ pub fn create_contract(e: &Env) -> (ChannelAuthContractClient<'_>, Address) {
 }
 
 #[test]
+fn test_add_provider_rejects_contract_address() {
+    let e = Env::default();
+    let (auth_client, _admin) = create_contract(&e);
+    // Address::generate produces a contract address — the kind `require_provider` can never
+    // match (RV audit B7).
+    let contract_addr = Address::generate(&e);
+
+    let rejected = auth_client
+        .mock_all_auths()
+        .try_add_provider(&contract_addr);
+
+    assert!(rejected.is_err());
+    assert!(!auth_client.is_provider(&contract_addr));
+
+    // An Ed25519 account address is accepted.
+    let provider = Ed25519Account::generate(&e);
+    auth_client.mock_all_auths().add_provider(&provider.address);
+    assert!(auth_client.is_provider(&provider.address));
+}
+
+#[test]
 fn test_admin_transfer_keeps_current_admin_in_control_until_acceptance() {
     let e = Env::default();
     let (auth_client, admin) = create_contract(&e);
     let pending_admin = Address::generate(&e);
-    let provider = Address::generate(&e);
-    let blocked_provider = Address::generate(&e);
+    let provider = Ed25519Account::generate(&e).address;
+    let blocked_provider = Ed25519Account::generate(&e).address;
 
     let live_until = e.ledger().sequence() + 3 * 17_280;
     auth_client
@@ -83,8 +104,8 @@ fn test_admin_transfer_requires_pending_admin_to_accept() {
     let (auth_client, admin) = create_contract(&e);
     let pending_admin = Address::generate(&e);
     let non_pending_admin = Address::generate(&e);
-    let old_admin_provider = Address::generate(&e);
-    let new_admin_provider = Address::generate(&e);
+    let old_admin_provider = Ed25519Account::generate(&e).address;
+    let new_admin_provider = Ed25519Account::generate(&e).address;
 
     let live_until = e.ledger().sequence() + 3 * 17_280;
     auth_client
