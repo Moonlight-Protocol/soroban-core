@@ -101,7 +101,13 @@ pub trait UtxoHandlerTrait {
                 };
 
                 store.spend(&spend_utxo);
-                total_available_balance += amount;
+                // B2: keep value conservation correct-by-construction — this library may be
+                // compiled with overflow-checks off, so guard the accumulator explicitly rather
+                // than relying on the env's overflow panic.
+                total_available_balance = match total_available_balance.checked_add(amount) {
+                    Some(v) => v,
+                    None => panic_with_error!(e, MoonlightError::AmountOverflow),
+                };
 
                 #[cfg(not(feature = "no-utxo-events"))]
                 UtxoEvent {
@@ -121,7 +127,12 @@ pub trait UtxoHandlerTrait {
                 assert_with_error!(&e, amount > 0, MoonlightError::InvalidCreateAmount);
 
                 store.create(&create_utxo, amount);
-                total_available_balance -= amount;
+                // B2: see the spend accumulator above — guard the subtraction explicitly so the
+                // conservation invariant does not depend on the consumer's overflow-checks profile.
+                total_available_balance = match total_available_balance.checked_sub(amount) {
+                    Some(v) => v,
+                    None => panic_with_error!(e, MoonlightError::AmountUnderflow),
+                };
 
                 #[cfg(not(feature = "no-utxo-events"))]
                 UtxoEvent {
