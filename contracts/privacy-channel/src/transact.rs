@@ -32,41 +32,10 @@ pub fn pre_process_channel_operation(
     e: &Env,
     op: ChannelOperation,
 ) -> (InternalBundle, i128, i128) {
-    assert_with_error!(
-        &e,
-        op_has_no_conflicting_conditions(&e, &op),
-        Error::BundleHasConflictingConditions
-    );
-
-    let mut total_deposit: i128 = 0;
-    for (_addr, amt, _conds) in op.deposit.iter() {
-        // MOON-05: reject non-positive amounts in-contract rather than relying on the asset SAC.
-        assert_with_error!(&e, amt > 0, Error::InvalidExternalAmount);
-        total_deposit = match total_deposit.checked_add(amt) {
-            Some(v) => v,
-            None => panic_with_error!(&e, Error::AmountOverflow),
-        };
-    }
-
-    let mut total_withdraw: i128 = 0;
-    for (_addr, amt, _conds) in op.withdraw.iter() {
-        assert_with_error!(&e, amt > 0, Error::InvalidExternalAmount);
-        total_withdraw = match total_withdraw.checked_add(amt) {
-            Some(v) => v,
-            None => panic_with_error!(&e, Error::AmountOverflow),
-        };
-    }
-
-    verify_external_operations(&e, op.deposit.clone(), op.withdraw.clone());
-
-    // MOON-01: bind owner-signed conditions to executed effects. The balance check in
-    // `process_bundle` only guarantees value conservation, not *where* the value goes; without
-    // this, a provider can keep `op.spend` byte-identical (owner P256 sig still verifies) and
-    // redirect `op.create` / `op.withdraw` to an attacker while staying balanced. This enforces
-    // that every Create/ExtWithdraw condition signed by a spend owner (P256) or depositor (Ed25519)
-    // is executed exactly (same utxo/addr + amount). Extra executed creates/withdraws are allowed
-    // (the provider fee); the balance check bounds them to the residual the signers left.
-    assert_signed_effects_are_executed(&e, &op);
+    // All condition/operation validation is consolidated in `validate_channel_operation`, which
+    // runs every check in the exact required order and returns the deposit/withdraw totals it
+    // computes while validating the external amounts.
+    let (total_deposit, total_withdraw) = validate_channel_operation(e, &op);
 
     let auth_req = calculate_auth_requirements(e, &op.spend); // &vec![&e]);
 
@@ -83,6 +52,70 @@ pub fn pre_process_channel_operation(
     };
 
     return (utxo_op, total_deposit, total_withdraw);
+}
+
+/// Consolidated validation for a `ChannelOperation`.
+///
+/// This is the single place that owns every condition/operation check the channel enforces before a
+/// bundle is processed. It runs the checks in the exact order the contract requires and returns
+/// `(total_deposit, total_withdraw)` — the external-amount totals it necessarily computes while
+/// validating those amounts.
+///
+/// The order is behavior-significant: it fixes which error is surfaced when an input violates more
+/// than one rule. In particular the amount/overflow checks (B/C) run *before* the
+/// duplicate-address / cross-side checks (D), so an input that both overflows and repeats an address
+/// still reports `AmountOverflow` rather than `RepeatedAccountForDeposit`.
+///
+/// Sequence (each check preserved 1:1 from its previous scattered location):
+/// 1. A — no conflicting conditions across `spend ∪ deposit ∪ withdraw`
+///    (`BundleHasConflictingConditions`). See `op_has_no_conflicting_conditions`.
+/// 2. B — each deposit amount is strictly positive (`InvalidExternalAmount`) and the running sum
+///    does not overflow (`AmountOverflow`); accumulates `total_deposit`.
+/// 3. C — same for withdraw amounts; accumulates `total_withdraw`.
+/// 4. D — no duplicate deposit/withdraw addresses, and for any address present on both sides the two
+///    condition sequences are XDR-equal (`RepeatedAccountForDeposit` / `RepeatedAccountForWithdraw`
+///    / `ConflictingConditionsForAccount`). See `verify_external_operations`.
+/// 5. E — every owner-signed `Create` / `ExtWithdraw` effect is executed (`UnauthorizedOperation`,
+///    MOON-01). See `assert_signed_effects_are_executed`.
+fn validate_channel_operation(e: &Env, op: &ChannelOperation) -> (i128, i128) {
+    // A: no conflicting conditions across the flattened spend/deposit/withdraw condition sets.
+    assert_with_error!(
+        e,
+        op_has_no_conflicting_conditions(e, op),
+        Error::BundleHasConflictingConditions
+    );
+
+    // B: deposit amounts strictly positive; running sum non-overflowing.
+    let mut total_deposit: i128 = 0;
+    for (_addr, amt, _conds) in op.deposit.iter() {
+        // MOON-05: reject non-positive amounts in-contract rather than relying on the asset SAC.
+        assert_with_error!(e, amt > 0, Error::InvalidExternalAmount);
+        total_deposit = match total_deposit.checked_add(amt) {
+            Some(v) => v,
+            None => panic_with_error!(e, Error::AmountOverflow),
+        };
+    }
+
+    // C: withdraw amounts strictly positive; running sum non-overflowing.
+    let mut total_withdraw: i128 = 0;
+    for (_addr, amt, _conds) in op.withdraw.iter() {
+        assert_with_error!(e, amt > 0, Error::InvalidExternalAmount);
+        total_withdraw = match total_withdraw.checked_add(amt) {
+            Some(v) => v,
+            None => panic_with_error!(e, Error::AmountOverflow),
+        };
+    }
+
+    // D: no duplicate deposit/withdraw addresses; cross-side condition-sequence equality.
+    verify_external_operations(e, op.deposit.clone(), op.withdraw.clone());
+
+    // E: MOON-01 — bind owner-signed conditions to executed effects. The balance check in
+    // `process_bundle` only guarantees value conservation, not *where* the value goes; without
+    // this, a provider could keep `op.spend` byte-identical (owner P256 sig still verifies) and
+    // redirect `op.create` / `op.withdraw` to an attacker while staying balanced.
+    assert_signed_effects_are_executed(e, op);
+
+    (total_deposit, total_withdraw)
 }
 
 /// MOON-01 binding: enforce that every cryptographically-signed `Create` / `ExtWithdraw` condition
@@ -247,4 +280,337 @@ pub fn op_has_no_conflicting_conditions(e: &Env, op: &ChannelOperation) -> bool 
     }
 
     true
+}
+
+/// Equivalence backstop for the consolidation of condition/operation validation into
+/// `validate_channel_operation`. These tests pin the accept/reject outcome, the exact error code,
+/// and — critically — the check *ordering* that determines which error surfaces when an input
+/// violates more than one rule. Reject cases go through `try_transact` (validation runs before any
+/// signature check, so no signatures are needed) and assert the exact contract error, exactly as
+/// the pre-existing MOON-01 / MOON-05 tests do.
+#[cfg(test)]
+mod validation_tests {
+    use super::{op_has_no_conflicting_conditions, validate_channel_operation, ChannelOperation};
+    use crate::test::test::create_contracts;
+    use moonlight_errors::Error as ContractError;
+    use moonlight_helpers::testutils::snapshot::get_env_with_g_accounts;
+    use moonlight_primitives::Condition;
+    use soroban_sdk::{testutils::Address as _, vec, Address, Env, Error as SdkError};
+
+    fn assert_channel_error(
+        res_err: Option<Result<SdkError, soroban_sdk::InvokeError>>,
+        expected: ContractError,
+    ) {
+        assert_eq!(
+            res_err,
+            Some(Ok(SdkError::from_contract_error(expected as u32)))
+        );
+    }
+
+    // ---- Reject cases (one per previously-uncovered check) ----
+
+    // A: two conflicting conditions (same ExtDeposit address, different amount) anywhere in the
+    // flattened spend/deposit/withdraw condition sets.
+    #[test]
+    fn rejects_conflicting_conditions() {
+        let e = get_env_with_g_accounts();
+        let (channel, _auth, _token, _admin) = create_contracts(&e);
+        let d = Address::generate(&e);
+        let x = Address::generate(&e);
+
+        let op = ChannelOperation {
+            spend: vec![&e],
+            create: vec![&e],
+            deposit: vec![
+                &e,
+                (
+                    d,
+                    100_i128,
+                    vec![
+                        &e,
+                        Condition::ExtDeposit(x.clone(), 1_i128),
+                        Condition::ExtDeposit(x, 2_i128),
+                    ],
+                ),
+            ],
+            withdraw: vec![&e],
+        };
+
+        assert_channel_error(
+            channel.try_transact(&op).err(),
+            ContractError::BundleHasConflictingConditions,
+        );
+    }
+
+    // B2: deposit running-sum overflow (distinct addresses so the dup-address check cannot fire).
+    #[test]
+    fn rejects_deposit_overflow() {
+        let e = get_env_with_g_accounts();
+        let (channel, _auth, _token, _admin) = create_contracts(&e);
+        let a = Address::generate(&e);
+        let b = Address::generate(&e);
+
+        let op = ChannelOperation {
+            spend: vec![&e],
+            create: vec![&e],
+            deposit: vec![&e, (a, i128::MAX, vec![&e]), (b, 1_i128, vec![&e])],
+            withdraw: vec![&e],
+        };
+
+        assert_channel_error(
+            channel.try_transact(&op).err(),
+            ContractError::AmountOverflow,
+        );
+    }
+
+    // C2: withdraw running-sum overflow.
+    #[test]
+    fn rejects_withdraw_overflow() {
+        let e = get_env_with_g_accounts();
+        let (channel, _auth, _token, _admin) = create_contracts(&e);
+        let a = Address::generate(&e);
+        let b = Address::generate(&e);
+
+        let op = ChannelOperation {
+            spend: vec![&e],
+            create: vec![&e],
+            deposit: vec![&e],
+            withdraw: vec![&e, (a, i128::MAX, vec![&e]), (b, 1_i128, vec![&e])],
+        };
+
+        assert_channel_error(
+            channel.try_transact(&op).err(),
+            ContractError::AmountOverflow,
+        );
+    }
+
+    // D1: duplicate deposit address.
+    #[test]
+    fn rejects_duplicate_deposit_address() {
+        let e = get_env_with_g_accounts();
+        let (channel, _auth, _token, _admin) = create_contracts(&e);
+        let a = Address::generate(&e);
+
+        let op = ChannelOperation {
+            spend: vec![&e],
+            create: vec![&e],
+            deposit: vec![&e, (a.clone(), 10_i128, vec![&e]), (a, 20_i128, vec![&e])],
+            withdraw: vec![&e],
+        };
+
+        assert_channel_error(
+            channel.try_transact(&op).err(),
+            ContractError::RepeatedAccountForDeposit,
+        );
+    }
+
+    // D2: duplicate withdraw address.
+    #[test]
+    fn rejects_duplicate_withdraw_address() {
+        let e = get_env_with_g_accounts();
+        let (channel, _auth, _token, _admin) = create_contracts(&e);
+        let a = Address::generate(&e);
+
+        let op = ChannelOperation {
+            spend: vec![&e],
+            create: vec![&e],
+            deposit: vec![&e],
+            withdraw: vec![&e, (a.clone(), 10_i128, vec![&e]), (a, 20_i128, vec![&e])],
+        };
+
+        assert_channel_error(
+            channel.try_transact(&op).err(),
+            ContractError::RepeatedAccountForWithdraw,
+        );
+    }
+
+    // D3: an address on both sides whose condition sequences are not XDR-equal. The two conditions
+    // use different addresses so check A does not flag them as conflicting first.
+    #[test]
+    fn rejects_cross_side_sequence_mismatch() {
+        let e = get_env_with_g_accounts();
+        let (channel, _auth, _token, _admin) = create_contracts(&e);
+        let shared = Address::generate(&e);
+        let y1 = Address::generate(&e);
+        let y2 = Address::generate(&e);
+
+        let op = ChannelOperation {
+            spend: vec![&e],
+            create: vec![&e],
+            deposit: vec![
+                &e,
+                (
+                    shared.clone(),
+                    10_i128,
+                    vec![&e, Condition::ExtWithdraw(y1, 1_i128)],
+                ),
+            ],
+            withdraw: vec![
+                &e,
+                (shared, 5_i128, vec![&e, Condition::ExtWithdraw(y2, 1_i128)]),
+            ],
+        };
+
+        assert_channel_error(
+            channel.try_transact(&op).err(),
+            ContractError::ConflictingConditionsForAccount,
+        );
+    }
+
+    // ---- Ordering guards (the crux of behavior preservation) ----
+
+    // Overflow + duplicate deposit address together must still report AmountOverflow, because the
+    // amount checks (B) run before the duplicate-address check (D). If B/C were moved after D this
+    // would regress to RepeatedAccountForDeposit.
+    #[test]
+    fn order_overflow_reported_before_duplicate_deposit() {
+        let e = get_env_with_g_accounts();
+        let (channel, _auth, _token, _admin) = create_contracts(&e);
+        let a = Address::generate(&e);
+
+        let op = ChannelOperation {
+            spend: vec![&e],
+            create: vec![&e],
+            deposit: vec![&e, (a.clone(), i128::MAX, vec![&e]), (a, 1_i128, vec![&e])],
+            withdraw: vec![&e],
+        };
+
+        assert_channel_error(
+            channel.try_transact(&op).err(),
+            ContractError::AmountOverflow,
+        );
+    }
+
+    // Conflicting conditions + overflow together must report BundleHasConflictingConditions,
+    // because the conflict check (A) runs first.
+    #[test]
+    fn order_conflict_reported_before_overflow() {
+        let e = get_env_with_g_accounts();
+        let (channel, _auth, _token, _admin) = create_contracts(&e);
+        let a = Address::generate(&e);
+        let b = Address::generate(&e);
+        let x = Address::generate(&e);
+
+        let op = ChannelOperation {
+            spend: vec![&e],
+            create: vec![&e],
+            deposit: vec![
+                &e,
+                (
+                    a,
+                    i128::MAX,
+                    vec![
+                        &e,
+                        Condition::ExtDeposit(x.clone(), 1_i128),
+                        Condition::ExtDeposit(x, 2_i128),
+                    ],
+                ),
+                (b, 1_i128, vec![&e]),
+            ],
+            withdraw: vec![&e],
+        };
+
+        assert_channel_error(
+            channel.try_transact(&op).err(),
+            ContractError::BundleHasConflictingConditions,
+        );
+    }
+
+    // ---- Accept cases ----
+
+    // A benign op passes every check and `validate_channel_operation` returns the amount totals it
+    // computed. Called directly (no contract invocation needed) since validation is pure.
+    #[test]
+    fn accepts_benign_op_and_returns_totals() {
+        let e = Env::default();
+        let a = Address::generate(&e);
+        let b = Address::generate(&e);
+        let c = Address::generate(&e);
+
+        let op = ChannelOperation {
+            spend: vec![&e],
+            create: vec![&e],
+            deposit: vec![&e, (a, 10_i128, vec![&e]), (b, 20_i128, vec![&e])],
+            withdraw: vec![&e, (c, 5_i128, vec![&e])],
+        };
+
+        let (total_deposit, total_withdraw) = validate_channel_operation(&e, &op);
+        assert_eq!(total_deposit, 30_i128);
+        assert_eq!(total_withdraw, 5_i128);
+    }
+
+    // E accept path: a signed ExtWithdraw condition that IS executed by the withdraw list passes
+    // the MOON-01 binding.
+    #[test]
+    fn accepts_matching_signed_withdraw_effect() {
+        let e = Env::default();
+        let depositor = Address::generate(&e);
+        let recipient = Address::generate(&e);
+
+        let op = ChannelOperation {
+            spend: vec![&e],
+            create: vec![&e],
+            deposit: vec![
+                &e,
+                (
+                    depositor,
+                    10_i128,
+                    vec![&e, Condition::ExtWithdraw(recipient.clone(), 5_i128)],
+                ),
+            ],
+            withdraw: vec![&e, (recipient, 5_i128, vec![&e])],
+        };
+
+        let (total_deposit, total_withdraw) = validate_channel_operation(&e, &op);
+        assert_eq!(total_deposit, 10_i128);
+        assert_eq!(total_withdraw, 5_i128);
+    }
+
+    // Check A predicate in isolation: disjoint conditions do not conflict; same-address/different
+    // amount conditions do.
+    #[test]
+    fn op_has_no_conflicting_conditions_distinguishes_conflict() {
+        let e = Env::default();
+        let x = Address::generate(&e);
+        let y = Address::generate(&e);
+        let d = Address::generate(&e);
+
+        let disjoint = ChannelOperation {
+            spend: vec![&e],
+            create: vec![&e],
+            deposit: vec![
+                &e,
+                (
+                    d.clone(),
+                    1_i128,
+                    vec![
+                        &e,
+                        Condition::ExtDeposit(x.clone(), 1_i128),
+                        Condition::ExtDeposit(y, 1_i128),
+                    ],
+                ),
+            ],
+            withdraw: vec![&e],
+        };
+        assert!(op_has_no_conflicting_conditions(&e, &disjoint));
+
+        let conflicting = ChannelOperation {
+            spend: vec![&e],
+            create: vec![&e],
+            deposit: vec![
+                &e,
+                (
+                    d,
+                    1_i128,
+                    vec![
+                        &e,
+                        Condition::ExtDeposit(x.clone(), 1_i128),
+                        Condition::ExtDeposit(x, 2_i128),
+                    ],
+                ),
+            ],
+            withdraw: vec![&e],
+        };
+        assert!(!op_has_no_conflicting_conditions(&e, &conflicting));
+    }
 }
