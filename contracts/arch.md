@@ -51,6 +51,7 @@ Any failure at any step reverts the entire transaction.
 - Maintain the admin address with rights to mutate the provider set, transfer admin, and upgrade contracts.
 - Implement `CustomAccountInterface` so that other contracts (specifically, Privacy Channel instances) can use a Channel Auth contract address as their authorization principal.
 - Verify provider Ed25519 signatures and per-UTXO P256 signatures on every bundle.
+- Record council decisions to enable/disable asset channels as **advisory, event-only** lifecycle signals (`enable_channel` / `disable_channel`). No channel/asset state is stored on-chain and nothing on-chain enforces the signalled state; enforcement is provider-side (see §2.2).
 
 ### 2.2 Public interface
 
@@ -66,9 +67,13 @@ Source of truth: `contracts/channel-auth/src/contract.rs`.
 | `accept_admin()` | pending admin | — | — | Completes a pending OpenZeppelin Ownable admin transfer. |
 | `admin()` | anyone | — | `Address` | Reads the current OpenZeppelin Ownable owner. |
 | `upgrade(wasm_hash)` | admin | `wasm_hash: BytesN<32>` | — | Uses OpenZeppelin's upgradeable utility to replace contract WASM after owner auth. |
+| `enable_channel(channel, asset)` | admin (council quorum) | `channel: Address`, `asset: Address` | — | Emits `ChannelStateChanged { enabled: true }`. Advisory/event-only (see note below). Also used to re-enable a disabled channel. |
+| `disable_channel(channel, asset)` | admin (council quorum) | `channel: Address`, `asset: Address` | — | Emits `ChannelStateChanged { enabled: false }`. Advisory/event-only (see note below). |
 | `__check_auth(payload, signatures, contexts)` | Soroban host | `payload: Hash<32>`, `signatures: Signatures`, `contexts: Vec<Context>` | `Result<(), Error>` | Auth entry point invoked by Soroban when this contract is named as an authorization principal. |
 
 Admin and upgrade control use OpenZeppelin's `stellar-access` Ownable module and `stellar-contract-utils` upgradeable module. The public function names remain close to the previous `admin-sep` surface, but admin transfer is now explicitly two-step: `set_admin` proposes the next admin and `accept_admin` finalizes it.
+
+**Advisory channel lifecycle (RV audit B12).** `enable_channel` and `disable_channel` are event-only: they emit `ChannelStateChanged` to record the council's *intended* channel state, but the contract intentionally stores no channel/asset state and no on-chain code path reads the event — `transact` on a "disabled" Privacy Channel remains fully functional. Enforcement lives provider-side: providers treat a disabled channel as withdraw-only (new deposits and sends rejected, withdrawals served). The sole on-chain way to stop a channel is a contract `upgrade`. An on-chain enabled-flag with `transact` gating (e.g. block new deposits while still allowing withdrawals) is deferred future work.
 
 ### 2.3 Persistent state (instance storage)
 
@@ -76,6 +81,8 @@ Keys (all under `e.storage().instance()`):
 
 - OpenZeppelin Ownable state — current owner and optional pending owner. Set in the constructor; `set_admin` creates or replaces a pending transfer and `accept_admin` commits it.
 - `ProviderDataKey::AuthorizedProvider(addr)` — `()`. One entry per registered provider. Membership is checked via `.get(...).is_some()`.
+
+There is deliberately **no channel/asset lifecycle state**: `enable_channel` / `disable_channel` write nothing — they only emit `ChannelStateChanged` (see §2.2).
 
 Storage is **instance** (lives with the contract, has the contract's TTL) — not persistent. This means provider set lookups are cheap (single instance read) but the provider set must fit in a single instance entry's encoded size.
 
@@ -86,6 +93,7 @@ There is no nonce, no per-account replay state, and no rate-limiting state in Ch
 - `contract_initialized` — `{ admin: Address }`. Topic-formatted via `#[contractevent]`.
 - `provider_added` — `{ provider: Address }`.
 - `provider_removed` — `{ provider: Address }`.
+- `channel_state_changed` — `{ channel: Address, asset: Address, enabled: bool }`. Emitted by `enable_channel` / `disable_channel`. **Advisory only**: it signals intended channel state for off-chain consumers (council-platform DB, providers); nothing on-chain reads or enforces it.
 
 There is **no custom Moonlight event emitted on `set_admin` or `upgrade`** by this contract directly. OpenZeppelin Ownable emits ownership-transfer events for admin changes, and the Stellar transaction record remains the source of truth for upgrades.
 

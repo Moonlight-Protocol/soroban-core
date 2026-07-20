@@ -67,6 +67,7 @@ The Quorum Auth contract manages a set of authorized providers and handles signa
 - **Provider Management**: Admin can add/remove authorized providers
 - **UTXO Authorization**: Verifies P256 (secp256r1) signatures on UTXO spend operations
 - **Provider Authorization**: Requires at least one registered provider signature on transactions
+- **Channel Lifecycle (advisory)**: Admin can emit enable/disable events for asset channels. Event-only — the contract stores no channel state and does not enforce the signalled state; providers enforce it off-chain (disabled = withdraw-only), and a contract upgrade is the only on-chain stop
 
 The contract implements `CustomAccountInterface` to act as an authorization layer for the Privacy Channel.
 
