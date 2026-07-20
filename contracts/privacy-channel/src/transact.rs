@@ -556,10 +556,12 @@ mod validation_tests {
     // ---- Accept cases ----
 
     // A benign op passes every check and `validate_channel_operation` returns the amount totals it
-    // computed. Called directly (no contract invocation needed) since validation is pure.
+    // computed. Runs inside the channel's contract frame: the self-withdraw check reads the
+    // channel's own address, so validation is no longer pure.
     #[test]
     fn accepts_benign_op_and_returns_totals() {
-        let e = Env::default();
+        let e = get_env_with_g_accounts();
+        let (channel, _auth, _token, _admin) = create_contracts(&e);
         let a = Address::generate(&e);
         let b = Address::generate(&e);
         let c = Address::generate(&e);
@@ -571,7 +573,8 @@ mod validation_tests {
             withdraw: vec![&e, (c, 5_i128, vec![&e])],
         };
 
-        let (total_deposit, total_withdraw) = validate_channel_operation(&e, &op);
+        let (total_deposit, total_withdraw) =
+            e.as_contract(&channel.address, || validate_channel_operation(&e, &op));
         assert_eq!(total_deposit, 30_i128);
         assert_eq!(total_withdraw, 5_i128);
     }
@@ -580,7 +583,8 @@ mod validation_tests {
     // the MOON-01 binding.
     #[test]
     fn accepts_matching_signed_withdraw_effect() {
-        let e = Env::default();
+        let e = get_env_with_g_accounts();
+        let (channel, _auth, _token, _admin) = create_contracts(&e);
         let depositor = Address::generate(&e);
         let recipient = Address::generate(&e);
 
@@ -598,7 +602,8 @@ mod validation_tests {
             withdraw: vec![&e, (recipient, 5_i128, vec![&e])],
         };
 
-        let (total_deposit, total_withdraw) = validate_channel_operation(&e, &op);
+        let (total_deposit, total_withdraw) =
+            e.as_contract(&channel.address, || validate_channel_operation(&e, &op));
         assert_eq!(total_deposit, 10_i128);
         assert_eq!(total_withdraw, 5_i128);
     }
