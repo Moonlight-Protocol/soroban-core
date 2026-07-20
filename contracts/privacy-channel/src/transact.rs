@@ -229,6 +229,19 @@ fn verify_external_operations(
         panic_with_error!(&e, Error::RepeatedAccountForWithdraw);
     }
 
+    // B11: a withdrawal naming the channel itself would execute as
+    // `transfer(channel, channel, amount)` — a net-zero token move — while `Supply` still
+    // decrements, burning UTXO claims without any tokens leaving. The resulting surplus
+    // (token balance above `Supply`) is unreachable through `transact`, so reject the
+    // self-withdraw outright. The direct-transfer variant — sending tokens straight to the
+    // channel address outside `transact` — cannot be prevented here; such tokens are inert
+    // surplus above `Supply`, recoverable only by an admin upgrade.
+    for (to, _amount, _conditions) in withdraw.iter() {
+        if to == e.current_contract_address() {
+            panic_with_error!(&e, Error::WithdrawToChannelAddress);
+        }
+    }
+
     // If an address is both depositing and withdrawing, the condition sequences must be identical (order + content).
     for (dep_addr, _, dep_conds) in deposit.iter() {
         for (with_addr, _amt, with_conds) in withdraw.iter() {
@@ -251,6 +264,13 @@ pub fn execute_external_operations(
     let asset_client = TokenClient::new(e, &asset);
 
     for (from, amount, deposit_conditions) in deposit.iter() {
+        // B10: the channel requires `from` to authorize only `[conditions]`; consent to the
+        // deposit `amount` is delegated to the asset's `transfer`, which requires `from`'s
+        // authorization for the exact `(from, to, amount)` triple. This is sound iff the
+        // channel asset requires `from`'s authorization to move value (true for a compliant
+        // SAC). An asset that can move value without `from`'s authorization must not be used
+        // as a channel asset — nothing at the channel layer binds the amount to the
+        // depositor's consent (see `contracts/arch.md`, Asset SAC trust assumption).
         from.require_auth_for_args(vec![&e, deposit_conditions.into_val(e)]);
         asset_client.transfer(&from, &e.current_contract_address(), &amount);
         increase_supply(&e, amount);

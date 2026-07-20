@@ -1,3 +1,5 @@
+#[cfg(test)]
+pub mod b11;
 pub mod channel_operation_builder;
 #[cfg(test)]
 pub mod moon01;
