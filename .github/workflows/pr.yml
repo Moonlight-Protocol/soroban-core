@@ -50,6 +50,40 @@ jobs:
           name: contract-wasms
           path: artifacts/*.wasm
 
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Read pinned Rust version
+        id: rust-version
+        run: echo "channel=$(grep -m1 -E '^[[:space:]]*channel[[:space:]]*=' rust-toolchain.toml | cut -d\" -f2)" >> "$GITHUB_OUTPUT"
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: ${{ steps.rust-version.outputs.channel }}
+          components: rustfmt
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ~/.cargo/bin
+            target
+          key: ${{ runner.os }}-cargo-test-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y pkg-config libdbus-1-dev libudev-dev
+
+      - name: Check formatting
+        run: cargo fmt --all --check
+
+      - name: Run unit tests
+        run: cargo test --workspace --locked
+
   e2e:
     needs: build
     uses: Moonlight-Protocol/local-dev/.github/workflows/e2e-reusable.yml@main
