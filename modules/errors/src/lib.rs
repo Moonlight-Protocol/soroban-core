@@ -70,6 +70,9 @@ pub enum MoonlightError {
     UtxoNotFound = 2_007,
     /// The UTXO module cannot authorize transactions because no authorization contract is configured.
     AuthContractNotSet = 2_008,
+    /// A UTXO create supplied a key that is not a well-formed SEC1 uncompressed
+    /// P-256 point encoding (its leading marker byte is not `0x04`).
+    InvalidUtxoKey = 2_009,
 
     // Privacy channel errors: 3000-3099.
     /// The same account appears more than once in the deposit list.

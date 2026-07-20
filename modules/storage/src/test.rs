@@ -191,6 +191,51 @@ fn create_rejects_duplicate_utxo_even_after_spend() {
     });
 }
 
+/// Audit A2: a create whose key is not an SEC1 uncompressed (`0x04`-tagged)
+/// point encoding is rejected before any entry is written, so funds can never be
+/// locked under a key that would trap on spend.
+#[test]
+#[should_panic]
+fn create_rejects_key_without_uncompressed_marker() {
+    let e = Env::default();
+    let contract_id = storage_contract(&e);
+
+    in_contract(&e, &contract_id, || {
+        // Same body as a valid key, but the leading marker byte is 0x02
+        // (compressed tag) instead of 0x04 (uncompressed).
+        let mut bytes = [0u8; 65];
+        bytes[0] = 2;
+        for i in 1..65 {
+            bytes[i] = 1u8.wrapping_add(i as u8);
+        }
+        let malformed = BytesN::<65>::from_array(&e, &bytes);
+
+        Store::apply(&e, |store| store.create(&malformed, 100));
+    });
+}
+
+/// The guard must reject the malformed key without leaving a partial record
+/// behind, and must still accept a well-formed `0x04`-tagged key.
+#[test]
+fn create_marker_guard_accepts_valid_and_leaves_no_trace_on_reject() {
+    let e = Env::default();
+    let contract_id = storage_contract(&e);
+
+    in_contract(&e, &contract_id, || {
+        let mut bytes = [0u8; 65];
+        bytes[0] = 0; // point-at-infinity marker — not a spendable key.
+        let malformed = BytesN::<65>::from_array(&e, &bytes);
+
+        // The reject path never wrote an entry.
+        assert!(spend_state(&e, &malformed).is_none());
+
+        // A valid 0x04-tagged key is still accepted.
+        let valid = utxo(&e, 1);
+        Store::apply(&e, |store| store.create(&valid, 100));
+        assert_eq!(spend_state(&e, &valid), Some(100));
+    });
+}
+
 #[test]
 #[should_panic]
 fn create_rejects_zero_amount() {

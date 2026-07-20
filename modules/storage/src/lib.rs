@@ -27,6 +27,11 @@ pub struct Store {
     env: Env,
 }
 
+/// SEC1 tag byte that prefixes a 65-byte *uncompressed* elliptic-curve point.
+/// Every well-formed P-256 UTXO public key starts with this marker; see
+/// [`Store::create`] for the create-time guard (audit A2).
+pub const SEC1_UNCOMPRESSED_TAG: u8 = 0x04;
+
 impl Store {
     // MOON-02: persistent-entry TTL management. A UTXO's spend-state entry backs user funds and
     // must outlive long idle periods; without an explicit bump it would archive. Because each UTXO
@@ -72,11 +77,38 @@ impl Store {
 
     /// Creates a new unspent UTXO with the provided amount.
     ///
+    /// # Key validation (audit A2)
+    ///
+    /// Rejects a key that is not a well-formed SEC1 *uncompressed* P-256 point
+    /// encoding — i.e. whose leading marker byte is not [`SEC1_UNCOMPRESSED_TAG`]
+    /// (`0x04`). Under the deployed wiring the key IS the spending credential:
+    /// `__check_auth` releases a UTXO only on a P-256 signature verifying under
+    /// its key, and the host `secp256r1_verify` traps on a malformed key. So a
+    /// UTXO funded under a malformed key can never be spent and its value is
+    /// locked permanently. This one-time create-time guard rejects the obvious
+    /// malformations (compressed/hybrid/point-at-infinity markers, garbage) at
+    /// the single storage chokepoint every create path funnels through, at no
+    /// per-spend cost.
+    ///
+    /// This is the *marker-byte minimum*, not full on-curve validation: soroban
+    /// -sdk 25.3.0 exposes no P-256 point-validation host primitive (only
+    /// `secp256r1_verify`, which needs a signature), and full on-curve checking
+    /// would require in-contract 256-bit field arithmetic paid on every create.
+    /// A key with a `0x04` marker but off-curve coordinates still passes here and
+    /// would lock on spend, so **wallets must validate that a key is a valid
+    /// on-curve P-256 point before funding it** — such possession/encoding
+    /// errors are undetectable on-chain regardless.
+    ///
     /// # Panics
     ///
-    /// Panics if the amount is not positive or if a record already exists for
-    /// the UTXO key (including a spent record, which can never be recreated).
+    /// Panics if the key is not a `0x04`-tagged 65-byte encoding, if the amount
+    /// is not positive, or if a record already exists for the UTXO key
+    /// (including a spent record, which can never be recreated).
     pub fn create(&mut self, utxo65: &BytesN<65>, amount: i128) {
+        if utxo65.get(0) != Some(SEC1_UNCOMPRESSED_TAG) {
+            panic_with_error!(&self.env, Error::InvalidUtxoKey);
+        }
+
         if amount <= 0 {
             panic_with_error!(&self.env, Error::InvalidCreateAmount);
         }

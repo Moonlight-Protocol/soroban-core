@@ -54,11 +54,31 @@ so a holder keeps their own UTXO alive simply by observing it.
 
 The operation:
 
-1. rejects non-positive amounts (`InvalidCreateAmount`);
-2. rejects any key that already has a record — including a spent (`0`) tombstone,
+1. rejects any key that is not an SEC1 *uncompressed* P-256 point encoding —
+   i.e. whose leading marker byte is not `0x04` (`InvalidUtxoKey`), see
+   [Key validation](#key-validation-audit-a2) below;
+2. rejects non-positive amounts (`InvalidCreateAmount`);
+3. rejects any key that already has a record — including a spent (`0`) tombstone,
    which can never be recreated (`UtxoAlreadyExists`);
-3. writes the per-UTXO entry with `amount`;
-4. refreshes the entry's TTL.
+4. writes the per-UTXO entry with `amount`;
+5. refreshes the entry's TTL.
+
+#### Key validation (audit A2)
+
+The UTXO key IS the spending credential: `__check_auth` releases a UTXO only on a
+P-256 signature verifying under its key, and the host `secp256r1_verify` traps on
+a malformed key. A UTXO funded under a malformed key therefore can never be spent
+and its value is **locked permanently**. `create` guards against the obvious
+malformations once, at creation, by requiring the 65-byte key to carry the SEC1
+uncompressed marker byte `0x04` — at no per-spend cost.
+
+This is the marker-byte *minimum*, not full on-curve validation: soroban-sdk
+25.3.0 exposes no P-256 point-validation host primitive (only `secp256r1_verify`,
+which needs a signature), and full on-curve checking would require in-contract
+256-bit field arithmetic paid on every create. A key with a `0x04` marker but
+off-curve coordinates still passes this guard and would lock on spend, so
+**wallets MUST validate that a key is a valid on-curve P-256 point before funding
+it** — such possession/encoding errors are undetectable on-chain regardless.
 
 ### `spend`
 
