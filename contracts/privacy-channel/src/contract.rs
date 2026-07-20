@@ -30,6 +30,11 @@ const DAY_IN_LEDGERS: u32 = 17_280;
 const INSTANCE_BUMP_AMOUNT: u32 = 7 * DAY_IN_LEDGERS;
 const INSTANCE_LIFETIME_THRESHOLD: u32 = INSTANCE_BUMP_AMOUNT - DAY_IN_LEDGERS;
 
+// Cap the acceptance window of a pending ownership transfer in-contract. Without this the
+// window could run to the network max (~180 days), leaving a compromised pending key exploitable
+// for months. 7 days is the hard ceiling; the standard operating value is 3 days (see `set_admin`).
+const MAX_ACCEPTANCE_WINDOW: u32 = 7 * DAY_IN_LEDGERS;
+
 fn bump_instance_ttl(e: &Env) {
     e.storage()
         .instance()
@@ -67,8 +72,25 @@ impl PrivacyChannelContract {
         ownable::get_owner(e).unwrap()
     }
 
-    pub fn set_admin(e: &Env, new_admin: Address) {
-        ownable::transfer_ownership(e, &new_admin, e.ledger().max_live_until_ledger());
+    /// Initiate a two-step transfer of the admin (owner) role to `new_admin`.
+    ///
+    /// `live_until_ledger` is the ledger up to which `new_admin` may `accept_admin`. Pass
+    /// `current_ledger + N`, where `N` is the acceptance window in ledgers. The standard window
+    /// for a real ownership handover is **3 days** = `current_ledger + 3 * DAY_IN_LEDGERS`
+    /// (51_840 ledgers); the sensible range is 24h (17_280) to 7d (120_960). There is deliberately
+    /// no default — every call states its window explicitly.
+    ///
+    /// A non-zero window beyond the in-contract ceiling of 7 days (`MAX_ACCEPTANCE_WINDOW` =
+    /// 120_960 ledgers past the current ledger) panics [`Error::AcceptanceWindowTooLong`].
+    /// `live_until_ledger == 0` is exempt from the ceiling and cancels a pending transfer (the
+    /// library requires the cancel call to name the current pending address).
+    pub fn set_admin(e: &Env, new_admin: Address, live_until_ledger: u32) {
+        if live_until_ledger != 0
+            && live_until_ledger > e.ledger().sequence() + MAX_ACCEPTANCE_WINDOW
+        {
+            panic_with_error!(e, Error::AcceptanceWindowTooLong);
+        }
+        ownable::transfer_ownership(e, &new_admin, live_until_ledger);
     }
 
     pub fn accept_admin(e: &Env) {

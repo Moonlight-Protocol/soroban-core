@@ -47,6 +47,9 @@ pub enum MoonlightError {
     ProviderAlreadyRegistered = 1_012,
     /// The provider account is not registered.
     ProviderNotRegistered = 1_013,
+    /// A `set_admin` acceptance window exceeded the in-contract ceiling (7 days) for a
+    /// pending ownership transfer.
+    AcceptanceWindowTooLong = 1_014,
 
     // UTXO Module errors: 2000-2099.
     /// A UTXO creation attempted to write an output identifier that already exists.

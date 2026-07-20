@@ -10,6 +10,7 @@ use channel_auth_contract::contract::{
     ChannelAuthContract, ChannelAuthContractArgs, ChannelAuthContractClient,
 };
 
+use moonlight_errors::Error as ContractError;
 use moonlight_helpers::testutils::{
     keys::P256KeyPair,
     snapshot::{get_env_with_g_accounts, get_snapshot_g_accounts},
@@ -17,7 +18,7 @@ use moonlight_helpers::testutils::{
 use moonlight_primitives::Condition;
 use soroban_sdk::{
     testutils::{Address as _, Ledger, MockAuth, MockAuthInvoke},
-    vec, Address, Env, FromVal, IntoVal, String,
+    vec, Address, Env, Error as SorobanError, FromVal, IntoVal, String,
 };
 
 use token_contract::{TestToken as Token, TestTokenClient as TokenClient};
@@ -71,6 +72,7 @@ fn test_admin_transfer_keeps_current_admin_until_acceptance() {
     let (channel, _, _, admin) = create_contracts(&e);
     let pending_admin = Address::generate(&e);
     let next_admin = Address::generate(&e);
+    let live_until = e.ledger().sequence() + 3 * 17_280;
 
     channel
         .mock_auths(&[MockAuth {
@@ -78,11 +80,11 @@ fn test_admin_transfer_keeps_current_admin_until_acceptance() {
             invoke: &MockAuthInvoke {
                 contract: &channel.address,
                 fn_name: "set_admin",
-                args: (&pending_admin,).into_val(&e),
+                args: (&pending_admin, live_until).into_val(&e),
                 sub_invokes: &[],
             },
         }])
-        .set_admin(&pending_admin);
+        .set_admin(&pending_admin, &live_until);
 
     assert_eq!(channel.admin(), admin.clone());
 
@@ -92,11 +94,11 @@ fn test_admin_transfer_keeps_current_admin_until_acceptance() {
             invoke: &MockAuthInvoke {
                 contract: &channel.address,
                 fn_name: "set_admin",
-                args: (&next_admin,).into_val(&e),
+                args: (&next_admin, live_until).into_val(&e),
                 sub_invokes: &[],
             },
         }])
-        .try_set_admin(&next_admin);
+        .try_set_admin(&next_admin, &live_until);
 
     assert!(pending_admin_set_admin.is_err());
     assert_eq!(channel.admin(), admin);
@@ -109,6 +111,7 @@ fn test_admin_transfer_requires_pending_admin_to_accept() {
     let pending_admin = Address::generate(&e);
     let non_pending_admin = Address::generate(&e);
     let next_admin = Address::generate(&e);
+    let live_until = e.ledger().sequence() + 3 * 17_280;
 
     channel
         .mock_auths(&[MockAuth {
@@ -116,11 +119,11 @@ fn test_admin_transfer_requires_pending_admin_to_accept() {
             invoke: &MockAuthInvoke {
                 contract: &channel.address,
                 fn_name: "set_admin",
-                args: (&pending_admin,).into_val(&e),
+                args: (&pending_admin, live_until).into_val(&e),
                 sub_invokes: &[],
             },
         }])
-        .set_admin(&pending_admin);
+        .set_admin(&pending_admin, &live_until);
 
     let non_pending_accept = channel
         .mock_auths(&[MockAuth {
@@ -157,11 +160,11 @@ fn test_admin_transfer_requires_pending_admin_to_accept() {
             invoke: &MockAuthInvoke {
                 contract: &channel.address,
                 fn_name: "set_admin",
-                args: (&next_admin,).into_val(&e),
+                args: (&next_admin, live_until).into_val(&e),
                 sub_invokes: &[],
             },
         }])
-        .try_set_admin(&next_admin);
+        .try_set_admin(&next_admin, &live_until);
 
     assert!(old_admin_set_admin.is_err());
     assert_eq!(channel.admin(), pending_admin.clone());
@@ -172,13 +175,107 @@ fn test_admin_transfer_requires_pending_admin_to_accept() {
             invoke: &MockAuthInvoke {
                 contract: &channel.address,
                 fn_name: "set_admin",
-                args: (&next_admin,).into_val(&e),
+                args: (&next_admin, live_until).into_val(&e),
                 sub_invokes: &[],
             },
         }])
-        .set_admin(&next_admin);
+        .set_admin(&next_admin, &live_until);
 
     assert_eq!(channel.admin(), pending_admin);
+}
+
+#[test]
+fn test_set_admin_enforces_acceptance_window_ceiling() {
+    let e = Env::default();
+    let (channel, _, _, admin) = create_contracts(&e);
+    let pending_admin = Address::generate(&e);
+
+    // 7-day ceiling = current + 7 * DAY_IN_LEDGERS = current + 120_960.
+    let max_window = e.ledger().sequence() + 7 * 17_280;
+
+    // Exactly at the ceiling: accepted; admin stays until the pending transfer is accepted.
+    channel
+        .mock_auths(&[MockAuth {
+            address: &admin,
+            invoke: &MockAuthInvoke {
+                contract: &channel.address,
+                fn_name: "set_admin",
+                args: (&pending_admin, max_window).into_val(&e),
+                sub_invokes: &[],
+            },
+        }])
+        .set_admin(&pending_admin, &max_window);
+    assert_eq!(channel.admin(), admin.clone());
+
+    // One ledger past the ceiling: rejected with AcceptanceWindowTooLong.
+    let too_long = max_window + 1;
+    let res = channel
+        .mock_auths(&[MockAuth {
+            address: &admin,
+            invoke: &MockAuthInvoke {
+                contract: &channel.address,
+                fn_name: "set_admin",
+                args: (&pending_admin, too_long).into_val(&e),
+                sub_invokes: &[],
+            },
+        }])
+        .try_set_admin(&pending_admin, &too_long);
+    assert_eq!(
+        res.err(),
+        Some(Ok(SorobanError::from_contract_error(
+            ContractError::AcceptanceWindowTooLong as u32
+        )))
+    );
+}
+
+#[test]
+fn test_set_admin_zero_cancels_pending_transfer() {
+    let e = Env::default();
+    let (channel, _, _, admin) = create_contracts(&e);
+    let pending_admin = Address::generate(&e);
+
+    // Initiate a transfer within the window.
+    let live_until = e.ledger().sequence() + 3 * 17_280;
+    channel
+        .mock_auths(&[MockAuth {
+            address: &admin,
+            invoke: &MockAuthInvoke {
+                contract: &channel.address,
+                fn_name: "set_admin",
+                args: (&pending_admin, live_until).into_val(&e),
+                sub_invokes: &[],
+            },
+        }])
+        .set_admin(&pending_admin, &live_until);
+
+    // Cancel it: name the current pending address with live_until_ledger = 0 (ceiling-exempt).
+    let zero: u32 = 0;
+    channel
+        .mock_auths(&[MockAuth {
+            address: &admin,
+            invoke: &MockAuthInvoke {
+                contract: &channel.address,
+                fn_name: "set_admin",
+                args: (&pending_admin, zero).into_val(&e),
+                sub_invokes: &[],
+            },
+        }])
+        .set_admin(&pending_admin, &zero);
+
+    // The transfer is gone: the formerly-pending admin can no longer accept, admin is unchanged.
+    let accept = channel
+        .mock_auths(&[MockAuth {
+            address: &pending_admin,
+            invoke: &MockAuthInvoke {
+                contract: &channel.address,
+                fn_name: "accept_admin",
+                args: ().into_val(&e),
+                sub_invokes: &[],
+            },
+        }])
+        .try_accept_admin();
+    assert!(accept.is_err());
+    assert_eq!(channel.admin(), admin.clone());
 }
 
 #[test]
