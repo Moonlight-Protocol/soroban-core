@@ -102,57 +102,33 @@ pub struct AuthPayload {
 
 /// Constructs the payload for processing a bundle of UTXO operations.
 ///
-/// The payload is built by concatenating in order:
-///  - The contract address (32 bytes),
-///  - followed by all `create` conditions,
-///  - followed by all `deposit` conditions,
-///  - followed by all `withdraw` conditions,
-///  - followed by all `integration` conditions.
+/// The payload is built by concatenating, in this fixed order:
+///  1. the `contract` address bytes (the ~56-byte strkey string as passed in),
+///  2. the canonical XDR encoding of the ordered `Vec<Condition>` (`ToXdr`),
+///  3. the `live_until_ledger` (4-byte little-endian `u32`).
+///
+/// The condition list is serialized with `ToXdr` — the same self-delimiting
+/// on-wire representation that `equal_condition_sequence` compares against.
+/// Because XDR length-prefixes vectors and tags every enum variant, the encoding
+/// is **injective**: two distinct condition lists can never hash to the same
+/// bytes. In particular an `ExtDeposit(X, a)` and an `ExtWithdraw(X, a)` over the
+/// same address and amount now hash differently (the prior per-type bucket
+/// concatenation made them byte-identical), and reordering the conditions changes
+/// the hash — the digest binds the exact ordering the signer reviewed. The order
+/// is therefore preserved as-is; conditions are never sorted or canonicalized.
 ///
 /// The resulting byte stream is hashed using SHA-256 to produce a digest that is
 /// used for verifying the signatures of the bundle.
-///
-/// For consistency, all integer amounts are encoded as little-endian 8-byte sequences.
-/// UTXO identifiers are represented as their raw byte arrays. Also it is suggested to sort
-/// the conditions in the same ordering as they are defined in the original bundle  to ensure
-/// deterministic payloads.
 ///
 pub fn hash_payload(e: &Env, auth_payload: &AuthPayload, contract: &Bytes) -> Hash<32> {
     let mut b = Bytes::new(&e);
     b.append(&contract);
 
-    let mut b_create = Bytes::new(&e);
-    let mut b_deposit = Bytes::new(&e);
-    let mut b_withdraw = Bytes::new(&e);
-    let mut b_integrate = Bytes::new(&e);
-
-    for cond in auth_payload.conditions.iter() {
-        match cond {
-            Condition::Create(utxo, amount) => {
-                b_create.append(&Bytes::from_slice(&e, utxo.to_array().as_ref()));
-                b_create.append(&Bytes::from_slice(&e, &amount.to_le_bytes()));
-            }
-            Condition::ExtDeposit(addr, amount) => {
-                b_deposit.append(&addr.to_string().to_bytes());
-                b_deposit.append(&Bytes::from_slice(&e, &amount.to_le_bytes()));
-            }
-            Condition::ExtWithdraw(addr, amount) => {
-                b_withdraw.append(&addr.to_string().to_bytes());
-                b_withdraw.append(&Bytes::from_slice(&e, &amount.to_le_bytes()));
-            }
-            Condition::ExtIntegration(adapter, utxos, amount) => {
-                b_integrate.append(&adapter.to_string().to_bytes());
-                for utxo in utxos.iter() {
-                    b_integrate.append(&Bytes::from_slice(&e, utxo.to_array().as_ref()));
-                }
-                b_integrate.append(&Bytes::from_slice(&e, &amount.to_le_bytes()));
-            }
-        }
-    }
-    b.append(&b_create);
-    b.append(&b_deposit);
-    b.append(&b_withdraw);
-    b.append(&b_integrate);
+    // Canonical, order-sensitive XDR of the condition list. XDR is self-delimiting
+    // (length-prefixed vectors, variant-tagged enums), so distinct condition lists
+    // always produce distinct bytes — closing the deposit/withdraw and reordering
+    // collisions that the previous back-to-back bucket concatenation allowed.
+    b.append(&auth_payload.conditions.clone().to_xdr(e));
 
     b.append(&Bytes::from_slice(
         &e,
@@ -239,3 +215,6 @@ pub fn has_no_conflicting_conditions_in_sets(
     }
     true
 }
+
+#[cfg(test)]
+mod test;
